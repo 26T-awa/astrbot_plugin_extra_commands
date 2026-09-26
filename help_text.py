@@ -13,7 +13,7 @@ EHELP_TEXT = """以下为插件Extra_Commands提供的额外命令，部分命�
     -/ehelp [command]  显示指定命令的帮助信息
 = = = - - - = = = - - - = = =
 实用命令：
-/data · · · :管理数据
+/edata  · · :管理数据
 
 /random(/rand)
             :生成随机数
@@ -33,13 +33,11 @@ EHELP_TEXT = """以下为插件Extra_Commands提供的额外命令，部分命�
 HELP_TEXTS: dict[str, str] = {
     "ehelp": """/ehelp(/ext) :弹出此帮助
     -/ehelp [command]  显示插件内指定命令的帮助信息""",
-
-    # ---------------- 实用命令 ----------------
-    "data": """/data :管理数据
-    -/data get [key]  获取数据
-    -/data set [key] [value]  设置数据
-    -/data del [key]  删除数据
-    -/data mod [key] [value]  修改数据""",
+    "edata": """/edata :管理数据
+    -/edata get [key]  获取数据
+    -/edata set [key] [value]  设置数据
+    -/edata del [key]  删除数据
+    -/edata mod [key] [value]  修改数据""",
 
     "rand": """/rand(/random) :生成随机数
     -/rand [min] [max] [count]  生成随机数。默认范围为 0~99；min≤max；count为不超过100的生成数量，默认1个
@@ -49,6 +47,12 @@ HELP_TEXTS: dict[str, str] = {
 
     "alarm": """/alarm :设置闹钟
     -/alarm set [timestamp] [desc]  设置闹钟，timestamp为时间戳，desc为描述""",
+
+    "op": """/op :添加管理员
+    -/op @<user>""",
+
+    "deop": """/deop :撤回管理员
+    -/deop @<user>""",
 
     # ---------------- 调试命令 ----------------
     "forcequit": """/forcequit :退出机器人""",
@@ -68,11 +72,13 @@ ALIASES: dict[str, tuple[str, ...]] = {
 # 尚未实现、需以最简形式注册的指令：
 # 注册后它们才会出现在指令表中，`/ehelp <command>` 也能查到对应帮助。
 PENDING_COMMANDS: tuple[str, ...] = (
-    "data",
+    "edata",
     "rand",
     "time",
     "alarm",
     "forcequit",
+    "op",
+    "deop",
     "log",
 )
 

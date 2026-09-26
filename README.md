@@ -1,254 +1,132 @@
 # astrbot-plugin-extra-commands
 
-Extra commands for AstrBot.
+AstrBot 额外命令插件：随机数、时间查询、插件帮助、管理员（owner / admin）权限管理与进程退出。
 
 > **现还处于测试阶段，功能不完善，欢迎大家提出建议**
+>
+> 其中 `/edata`、`/alarm`、`/log` 仍为**占位实现**，发送后会提示「尚未实现」并附上规划用法。
 
-## 指令架构：支持参数的注册范式
+## 指令总览
 
-所有指令均为 `Star` 子类上的 `async def` + `yield` 生成器方法，用 `@filter.command(主指令, alias={别名...})` 注册，形成「装饰器声明 → 参数解析 → 业务执行 → 结果回复」四段式管线。
+| 指令 | 别名 | 参数 | 权限 | 状态 |
+| -------------- | ------------ | ------------------------------------------ | ----------------- | -------- |
+| `/help` | — | — | 所有人 | ✅ 可用 |
+| `/ehelp` | `/ext` | `[command]` | 所有人 | ✅ 可用 |
+| `/rand` | `/random` | `[-r <true\|false>] [min] [max] [count]` | 所有人 | ✅ 可用 |
+| `/time` | — | — | 所有人 | ✅ 可用 |
+| `/op` | — | `[@某人]` | 见「权限体系」 | ✅ 可用 |
+| `/deop` | — | `@某人` | owner | ✅ 可用 |
+| `/forcequit` | `/fq` | — | owner / admin | ✅ 可用 |
+| `/edata` | — | `get` / `set` / `del` / `mod` | — | 🚧 占位 |
+| `/alarm` | — | `set [timestamp] [desc]` | — | 🚧 占位 |
+| `/log` | — | `[n]` | — | 🚧 占位 |
 
-### 分层职责
+## `/rand` — 生成随机数
 
-| 层       | 载体                             | 职责                                          |
-|---------|--------------------------------|---------------------------------------------|
-| 注册层    | `@filter.command` + `alias`     | 声明触发词与中英别名，AstrBot 负责分发                     |
-| 解析层    | 模块级 `_parse_*` 纯函数             | 从 `event.message_str` 抽取参数，返回 `(值, 错误消息)` 二元组 |
-| 执行层    | 指令方法内的 `yield` 分支             | 参数校验 → 调用业务逻辑 → 收尾结算                        |
-| 回复层    | `_image_reply` / `_render_reply` | 统一组装 `Image` + 可选 `Plain` 消息链                |
+**位置参数 `[min] [max] [count]`**
 
-### 参数解析约定
+- **至少要给一个数字**：`/rand` 不带数字会因「参数不足」中断，并且用户收不到回复（见「已知问题」）
+- 只填一个数：视为 `max`，即 `0~max`
+- 填两个数：`min max`
+- 填三个数：`min max count`
+- `count` 默认 1，上限 `RAND_MAX_COUNT = 100`
+- 要求 `min ≤ max`；`min > max` 会报参数错误
 
-参数统一从 `event.message_str` 以正则提取，采用「**无参数返回 `None`，非法参数返回错误文案**」的双返回约定，使长度、词典、难度三者可自由组合且互不干扰：
+**开关 `-r <true|false>`**
 
-```python
-def _parse_length(text: str, max_len: int) -> tuple[int | None, str | None]:
-    m = re.search(r"-l\s+(\d+)", text, re.I)
-    if not m:
-        return None, None                 # 未传参：由调用方回退默认值
-    length = int(m.group(1))
-    if not (3 <= length <= max_len):
-        return None, f"单词长度需在 3~{max_len} 之间。"
-    return length, None                   # 合法：返回解析值
+- 设置返回的随机数**是否允许重复**：`-r true`（默认）允许重复（逐个 `randint`）；`-r false` 不重复（`random.sample`），此时 `count` 不能超过区间内整数个数（`max - min + 1`）
+- 该开关**只切换状态并回复提示，不会生成数字**，需要再发一次取值指令
+- 状态保存在模块级全局变量 `RAND_REPEAT`：**对所有会话生效，且不落盘**（插件重载后回到默认 `true`）
+
+```qq
+/rand 10           0~10 取 1 个
+/rand 1 10 3       1~10 取 3 个（允许重复）
+/rand -r false     关闭重复开关
+/rand 1 10 3       1~10 取 3 个不重复
 ```
 
-调用方据此短路返回错误、否则回退默认值：
+## `/time` — 当前时间
 
-```python
-parsed_len, len_err = _parse_length(text, self._max_length)
-if len_err:
-    yield event.plain_result(len_err)
-    return
-length = parsed_len or self._default_length
+回复北京时间的日期时间（含星期）与对应的 Unix 时间戳。
+
+## `/ehelp`、`/help` — 帮助
+
+- `/ehelp`（或 `/ext`）：输出插件总览
+- `/ehelp <command>`：输出该指令的详细帮助，支持别名与 `/` 前缀（如 `/ehelp /random`）；命令不存在时提示改用 `/ehelp ext`
+- `/help`：固定输出同一份总览
+
+帮助文本集中在 `help_text.py`，是帮助内容的唯一数据源：
+
+| 名字 | 说明 |
+| -------------------- | --------------------------------------- |
+| `EHELP_TEXT` | 总览帮助（`/ehelp`、`/help` 使用） |
+| `HELP_TEXTS` | 每个指令各自的帮助文本，键为主指令名 |
+| `ALIASES` | 主指令 → 别名，查询时归一处理 |
+| `PENDING_COMMANDS` | 尚未实现的占位指令清单 |
+| `get_help_text()` / `not_found_text()` / `pending_text()` | 查询与文案接口 |
+
+## 权限体系（owner / admin / member）
+
+等级保存在 `usergroup.json`，是一张「用户 ID → 等级」的映射：
+
+```json
+{
+    "123456789": "owner",
+    "987654321": "admin"
+}
 ```
 
-### 要点提炼
+- **加载时机**：插件 `initialize()` 时读取一次；每次 `/op`、`/deop` 修改后立即重新读取
+- **判定顺序**：`owner` → `admin` → `member`（`_get_level()`）
+- `/op`（无参数）：认领 owner，仅当当前无 owner 时生效。⚠️ 该分支**没有权限校验**，谁先发谁就成为 owner，请部署后第一时间认领
+- `/op @某人`：添加管理员，调用者须为 owner 或 admin。目标 ID 通过正则 `\((\d{5,})\)\s*$` 从消息**末尾**的 `@昵称(QQ号)` 中提取，因此必须真正 @ 对方（手打数字无效）
+- `/deop @某人`：撤回管理员，调用者须为 owner；`owner` 无法用指令撤回，请直接编辑 `usergroup.json`
+- `/forcequit`：须为 owner 或 admin，否则回复「权限越界！（需要 "admin"，实际上是 member）」
 
-- **生成器即状态机**：方法内任意 `return` / `yield` 即可结束本轮，错误分支无需嵌套，天然扁平
-- **校验前置、纯函数化**：解析逻辑抽为无副作用的模块级函数，便于单测；指令方法只做编排
-- **回复收敛到单点**：图片渲染统一走 `_render_reply`（`asyncio.to_thread` 卸载阻塞渲染），文本统一走 `event.plain_result`
-- **子指令用正则分流**：如 `/wordle help`、`/dailyword reset` 在同一入口内按正则分支，不再额外占用触发词
-- **别名覆盖中英文**：`alias={"猜词", "wd"}` 让同一逻辑同时服务中英用户
+## 数据文件
 
-## 完整代码骨架
+均位于 `<AstrBot>/data/plugin_data/astrbot_plugin_extra_commands/`：
 
-以下为可直接复用的最小范式：注册层声明指令，解析层抽取参数，执行层校验后编排，回复层统一封装消息链。
+| 文件 | 用途 | 状态 |
+| ---------------- | ---------------------------------- | -------- |
+| `usergroup.json` | 用户等级 `{ID: owner/admin/member}` | ✅ 使用中 |
+| `data.json` | `/edata` 的键值存储 | 🚧 预留 |
+| `alarms.json` | `/alarm` 的闹钟记录 | 🚧 预留 |
+| `time.json` | 时间相关数据 | 🚧 预留 |
 
-```python
-"""参数化指令注册范式的最小骨架。"""
+路径由 `PLUGIN_DATA_DIR` 定义：插件目录的 `parents[2]`（即 AstrBot 的 `data/`）下的 `plugin_data/astrbot_plugin_extra_commands`。
 
-import asyncio
-import re
-from io import BytesIO
+## 安装
 
-import astrbot.api.message_components as Comp
-from astrbot.api import logger
-from astrbot.api.event import AstrMessageEvent, filter
-from astrbot.api.star import Context, Star
+1. 把插件目录放到 AstrBot 的 `data/plugins/` 下，目录名为 `astrbot_plugin_extra_commands`
+2. **手动创建数据目录** `data/plugin_data/astrbot_plugin_extra_commands/` —— 插件不会自动创建（见「已知问题」）
+3. 重载插件，日志出现 `额外命令插件加载成功，占位指令：...` 即加载成功
+4. 部署后由管理员先发一次 `/op` 认领 owner
 
-HELP_TEXT = (
-    "🎯 指令帮助\n"
-    "/demo [-l 长度] [-d 词典]：开局\n"
-    "/demo help：查看帮助"
-)
+无第三方依赖，仅使用 Python 标准库与 AstrBot 内置 API。
 
+## 代码结构
 
-# ==================== 解析层：模块级纯函数 ====================
+| 文件 | 说明 |
+| ----------------- | ------------------------------------------- |
+| `main.py` | 插件主体：指令注册、参数解析、等级校验、延迟退出 |
+| `help_text.py` | 帮助文本库（唯一数据源，不依赖 astrbot，可单独测试） |
+| `exceptions.py` | 自定义异常：`ExtraCommandsError` 基类与参数/权限异常 |
+| `metadata.yaml` | 插件元信息 |
 
-def _parse_length(text: str, max_len: int) -> tuple[int | None, str | None]:
-    """解析 -l 长度参数：返回 (长度, 错误消息)；无 -l 时长度为 None。"""
-    m = re.search(r"-l\s+(\d+)", text, re.I)
-    if not m:
-        return None, None
-    length = int(m.group(1))
-    if not (3 <= length <= max_len):
-        return None, f"单词长度需在 3~{max_len} 之间。"
-    return length, None
+- 指令统一用 `@filter.command(主指令, alias={别名...})` 注册，方法内 `yield` 回复
+- 参数数量由静态方法 `_parse_args(message_str, (最小, 最大))` 统一校验
+- `/forcequit` 的退出流程：先 `yield` 回复 → 后台任务等待 2 秒让消息送达 → `signal.raise_signal(SIGINT)` 走 AstrBot 正常退出流程 → 失败则 `os._exit(0)` 兜底
 
+## 已知问题
 
-def _parse_dictionary(text: str) -> tuple[str | None, str | None]:
-    """解析 -d 词典参数：返回 (词典名, 错误消息)；无 -d 时词典为 None。"""
-    m = re.search(r"-d\s+([A-Za-z0-9]+)", text, re.I)
-    if not m:
-        return None, None
-    name = m.group(1)
-    if name not in get_dic_list():
-        return None, f"词典「{name}」不可用，当前可用：{', '.join(get_dic_list())}"
-    return name, None
+- `/edata`、`/alarm`、`/log` 尚未实现
+- 参数数量校验靠**抛异常**实现（`TooFewArgsError` / `TooManyArgsError` / `ArgsInputError`）。异常在 `yield` 生成器中抛出会直接中断该指令，**用户收不到回复**，只能从日志看到堆栈；例如 `/deop` 不给 @、`/rand` 不带数字都属于这种情况
+- `/rand` 的帮助文本写着「默认范围 0~99，默认 1 个」，但实现要求至少 1 个数字（`_parse_args(..., (1, 3))`），因此 `RAND_DEFAULT_RANGE` 实际不会生效，无参数调用只会中断
+- 数据目录不会自动创建；目录缺失时等级写盘会失败，但 `/op` 仍会回复「已添加管理员」
+- `_get_level()` 使用 `id is OWNER` 比较字符串，改用 `==` 更可靠
+- `/edata` 的占位提示调用 `pending_text("data")`，而帮助键名是 `edata`，因此提示中不会附带用法
 
+## 许可证
 
-def _mode_key(is_daily: bool, is_alt: bool) -> str:
-    """按对局属性解析配色模式键：每日优先，其次备用模式，否则常规。"""
-    return "daily" if is_daily else "alt" if is_alt else "normal"
-
-
-# ==================== 回复层：统一封装消息链 ====================
-
-def _create_image_component(img_data: bytes | BytesIO) -> Comp.Image:
-    """包装字节数据为 AstrBot Image 组件。"""
-    if isinstance(img_data, BytesIO):
-        return Comp.Image.fromIO(img_data)
-    return Comp.Image.fromBytes(img_data)
-
-
-def _image_reply(event: AstrMessageEvent, img: bytes | BytesIO, text: str = ""):
-    """图片回复：组装 Image 组件 + 可选 Plain 文本，返回待 yield 的结果对象。"""
-    comps: list[Comp.Image | Comp.Plain] = [_create_image_component(img)]
-    if text:
-        comps.append(Comp.Plain(text))
-    return event.chain_result(comps)
-
-
-async def _render_reply(event, renderer, *args, text: str = ""):
-    """后台线程渲染并组装图片回复，供命令 yield。"""
-    img = await asyncio.to_thread(renderer, *args)
-    return _image_reply(event, img, text)
-
-
-# ==================== 注册层 + 执行层 ====================
-
-class DemoPlugin(Star):
-    """示例插件：演示支持参数的指令注册范式。"""
-
-    def __init__(self, context: Context, config):
-        super().__init__(context)
-        self._max_length = config.get("max_length", 8)
-        self._default_length = config.get("default_length", 5)
-        self._default_dict = config.get("default_dict", "CET4")
-
-    @filter.command("demo", alias={"演示", "dm"})
-    async def cmd_demo(self, event: AstrMessageEvent):
-        """开局指令：支持 -l 长度与 -d 词典，参数可自由组合。"""
-        session_id = event.get_session_id()
-        text = event.message_str.strip()
-
-        # ① 子指令分流：同一入口内按正则判断，不额外占用触发词
-        if re.search(r"\bhelp\b", text, re.I):
-            yield event.plain_result(HELP_TEXT)
-            return
-
-        # ② 参数解析：任一非法即短路返回，否则回退默认值
-        parsed_len, len_err = _parse_length(text, self._max_length)
-        if len_err:
-            yield event.plain_result(len_err)
-            return
-        length = parsed_len or self._default_length
-
-        parsed_dict, dict_err = _parse_dictionary(text)
-        if dict_err:
-            yield event.plain_result(dict_err)
-            return
-        dictionary = parsed_dict or self._default_dict
-
-        # ③ 业务执行：阻塞操作一律走 asyncio.to_thread
-        try:
-            word, meaning = await asyncio.to_thread(random_word, dictionary, length)
-        except ValueError as e:
-            yield event.plain_result(str(e))
-            return
-        await asyncio.to_thread(record_word, word, session_id)
-
-        # ④ 状态登记 + 统一渲染回复
-        game = Wordle(word, meaning, is_valid=legal_word)
-        yield await self._open_game(
-            event,
-            session_id,
-            game,
-            style_key="normal",
-            text="🎯 战局已开！\n/g <单词> 开猜",
-        )
-
-    @filter.command("demo_guess", alias={"dg"})
-    async def cmd_guess(self, event: AstrMessageEvent):
-        """提交指令：演示「有状态对话」中的参数校验与结算收尾。"""
-        session_id = event.get_session_id()
-        game_info = self._games.get(session_id)
-        if game_info is None:
-            yield event.plain_result("还没有进行中的战局～")
-            return
-
-        game = game_info.game
-        parts = event.message_str.strip().split(maxsplit=1)
-        if len(parts) < 2:
-            yield event.plain_result("请发送 /dg <单词>，例如 /dg apple")
-            return
-
-        word = parts[1].strip().lower()
-        if len(word) != game.length:
-            yield event.plain_result(f"单词长度应为 {game.length} 位，请再猜。")
-            return
-
-        guess_result = game.guess(word)
-        if guess_result == GuessResult.DUPLICATE:
-            yield event.plain_result("该词已被测试过了，换个方向吧～")
-            return
-        if guess_result == GuessResult.ILLEGAL:
-            yield event.plain_result(f"「{word}」不是合法的英文单词，请换个词。")
-            return
-
-        img = await asyncio.to_thread(
-            render_board_image, game, self._styles[_mode_key(False, False)]
-        )
-        yield await self._resolve_guess(event, session_id, game_info, guess_result, img)
-
-    async def _open_game(self, event, session_id, game, *, text, style_key):
-        """冲突检查 → 注册对局会话 → 渲染开局棋盘。"""
-        if session_id in self._games:
-            return event.plain_result("已有进行中的战局，请结束后再开局。")
-        self._games[session_id] = GameSession(game=game)
-        return await _render_reply(
-            event, render_board_image, game, self._styles[style_key], text=text
-        )
-
-    async def _resolve_guess(self, event, session_id, game_info, guess_result, img):
-        """按猜词结果收尾并返回结算回复。"""
-        game = game_info.game
-        if guess_result == GuessResult.WIN:
-            self._stop_game(session_id)
-            return _image_reply(event, img, f"🎉 不愧是你~\n{game.result}")
-        if guess_result == GuessResult.LOSS:
-            self._stop_game(session_id)
-            return _image_reply(event, img, f"❌ 很遗憾，这就是结局。\n{game.result}")
-        remaining = game.rows - len(game.guessed_words)
-        return _image_reply(event, img, f"✅ 还剩 {remaining} 次机会")
-
-    async def terminate(self):
-        """插件热卸载前的静默清理。"""
-        self._games.clear()
-```
-
-### 骨架拆解
-
-| 步骤     | 代码位置                            | 要点                                    |
-|--------|---------------------------------|---------------------------------------|
-| ① 子指令  | `cmd_demo` 内首个正则分支              | `help` 等附属指令复用同一入口                    |
-| ② 参数解析 | `_parse_length` / `_parse_dictionary` | 双返回约定，逐个 `if err: yield ...; return` |
-| ③ 业务执行 | `asyncio.to_thread(...)`          | 阻塞调用不阻塞事件循环                           |
-| ④ 状态与回复 | `_open_game` / `_resolve_guess`   | 状态登记与图片渲染各自收敛到单一方法                    |
-
-### 扩展新指令清单
-
-1. **加参数**：新增 `_parse_xxx(text) -> (值, 错误)`，在入口按序校验即可，无需改动既有分支
-2. **加子指令**：在入口顶部追加一条正则分支，早于参数解析执行
-3. **加别名**：扩展 `alias={...}` 集合，不影响逻辑
-4. **加新模式**：扩展 `_mode_key` 的映射与 `self._styles` 的配色键，指令入口无需改动
+GNU Affero General Public License v3.0，详见 [LICENSE](LICENSE)。

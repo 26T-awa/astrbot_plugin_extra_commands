@@ -35,3 +35,10 @@ class ArgsInputError(ExtraCommandsError):
             super().__init__(f"参数错误！（理应得到 {limit}，实际上是 {got}）\n{help_text}")
         else:
             super().__init__(f"参数错误！（理应得到 {limit}，实际上是 {got}）")
+
+class PermissionError(ExtraCommandsError):
+    """权限越界错误"""
+    def __init__(self, got: str, required: str = "admin"):
+        self.got = got
+        self.required = required
+        super().__init__(f"权限越界！（需要 \"{required}\"，实际上是 {got}）")
