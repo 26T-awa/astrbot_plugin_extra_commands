@@ -43,10 +43,14 @@ HELP_TEXTS: dict[str, str] = {
     -/rand [min] [max] [count]  生成随机数。默认范围为 0~99；min≤max；count为不超过100的生成数量，默认1个
     -/rand -r <true|false>  设置返回的随机数是否重复。默认重复""",
 
-    "time": """/time :显示时间""",
+    "time": """/time :显示时间
+    -/time [timezone]  显示指定时区的时间，默认显示本地时间。timezone为时区缩写或地区名，如“UTC”、“CST”、“Asia/Shanghai”
+    -/time setzone <timezone>  设置默认时区""",
 
     "alarm": """/alarm :设置闹钟
-    -/alarm set [timestamp] [desc]  设置闹钟，timestamp为时间戳，desc为描述""",
+    -/alarm set <time> <desc>  设置闹钟，time为时间格式，具体有“+30s | +5m | +2h | +1d”、“2026-09-27/07:30 | 09-27/07:30 | 07:30”、“1790465400（时间戳）”，desc为描述
+    -/alarm list  查看闹钟列表
+    -/alarm del #<id>  删除闹钟，id为闹钟编号""",
 
     "op": """/op :添加管理员
     -/op @<user>""",
@@ -56,9 +60,6 @@ HELP_TEXTS: dict[str, str] = {
 
     # ---------------- 调试命令 ----------------
     "forcequit": """/forcequit :退出机器人""",
-
-    "log": """/log :查看日志
-    -/log [n]  查看最近n条日志，默认10条""",
 }
 
 # ==================== 别名与占位指令 ====================
@@ -67,18 +68,18 @@ HELP_TEXTS: dict[str, str] = {
 ALIASES: dict[str, tuple[str, ...]] = {
     "ehelp": ("ext",),
     "rand": ("random",),
+    "time": (),
+    "alarm": (),
+    "op": (),
+    "deop": (),
+    "forcequit": ("fq",),
+    "log": (),
 }
 
 # 尚未实现、需以最简形式注册的指令：
 # 注册后它们才会出现在指令表中，`/ehelp <command>` 也能查到对应帮助。
 PENDING_COMMANDS: tuple[str, ...] = (
     "edata",
-    "rand",
-    "time",
-    "alarm",
-    "forcequit",
-    "op",
-    "deop",
     "log",
 )
 
