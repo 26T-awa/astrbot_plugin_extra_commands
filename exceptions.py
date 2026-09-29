@@ -2,15 +2,18 @@
 自定义异常处理
 """
 
-# error.py
+from level import Level  # 权限等级管理
+
 
 class ExtraCommandsError(Exception):
     """机器人所有自定义异常的基类"""
+
     pass
-    
+
 
 class TooManyArgsError(ExtraCommandsError):
     """参数过多"""
+
     def __init__(self, got: int, limit: int):
         self.got = got
         self.limit = limit
@@ -19,6 +22,7 @@ class TooManyArgsError(ExtraCommandsError):
 
 class TooFewArgsError(ExtraCommandsError):
     """参数不足"""
+
     def __init__(self, got: int, limit: int):
         self.got = got
         self.limit = limit
@@ -27,18 +31,25 @@ class TooFewArgsError(ExtraCommandsError):
 
 class ArgsInputError(ExtraCommandsError):
     """参数错误"""
+
     def __init__(self, got: str, limit: str, help_text: str = None):
         self.got = got
         self.limit = limit
         self.help_text = help_text
         if help_text is not None:
-            super().__init__(f"参数错误！（理应得到 {limit}，实际上是 {got}）\n{help_text}")
+            super().__init__(
+                f"参数错误！（理应得到 {limit}，实际上是 {got}）\n{help_text}"
+            )
         else:
             super().__init__(f"参数错误！（理应得到 {limit}，实际上是 {got}）")
 
+
 class PermissionError(ExtraCommandsError):
     """权限越界错误"""
-    def __init__(self, got: str, required: str = "admin"):
+
+    def __init__(self, got: int, required: int = 3):
         self.got = got
         self.required = required
-        super().__init__(f"权限越界！（需要 \"{required}\"，实际上是 {got}）")
+        required = Level.level_str.get(required, "admin")
+        got = Level.level_str.get(got, "member")
+        super().__init__(f'权限越界！（需要 "{required}"，实际上是 {got}）')

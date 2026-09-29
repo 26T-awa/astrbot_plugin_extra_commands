@@ -16,45 +16,28 @@ from astrbot.api import logger
 from astrbot.api.event import filter, AstrMessageEvent, MessageChain
 from astrbot.api.star import Context, Star, register
 
-try:  # 以包形式加载时优先使用相对导入
-    from .help_text import (  # 命令帮助文本
-        EHELP_TEXT,
-        PENDING_COMMANDS,
-        get_help_text,
-        not_found_text,
-        pending_text,
-    )
-    from .exceptions import (  # 自定义异常
-        TooManyArgsError,
-        TooFewArgsError,
-        ArgsInputError,
-        PermissionError,
-    )
-except ImportError:  # 兜底：插件被当作顶层模块加载时
-    from help_text import (  # 命令帮助文本
-        EHELP_TEXT,
-        PENDING_COMMANDS,
-        get_help_text,
-        not_found_text,
-        pending_text,
-    )
-    from exceptions import (  # 自定义异常
-        TooManyArgsError,
-        TooFewArgsError,
-        ArgsInputError,
-        PermissionError,
-    )
 
-PLUGIN_DATA_DIR = (
-    Path(__file__).resolve().parents[2]
-    / "plugin_data"
-    / "astrbot_plugin_extra_commands"
+from help_text import (  # 命令帮助文本
+    EHELP_TEXT,
+    PENDING_COMMANDS,
+    get_help_text,
+    not_found_text,
+    pending_text,
 )
-LEVEL_FILE = PLUGIN_DATA_DIR / "usergroup.json"
-TIME_FILE = PLUGIN_DATA_DIR / "time.json"
-
-OWNER = ""
-ADMIN_LIST = []
+from exceptions import (  # 自定义异常
+    TooManyArgsError,
+    TooFewArgsError,
+    ArgsInputError,
+    PermissionError,
+)
+from file import (  # 文件操作
+    PLUGIN_DATA_DIR,
+    LEVEL_FILE,
+    ensure_plugin_data_dir_exists,
+    _load_file,
+    _save_file,
+)
+from level import Level  # 权限等级管理
 
 RAND_DEFAULT_RANGE = (0, 99)  # /rand 的默认范围
 RAND_MAX_COUNT = 100  # /rand 的最大生成数量
@@ -83,7 +66,7 @@ class ExtraCommands(Star):
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
         logger.info(f"额外命令插件加载成功，占位指令：{', '.join(PENDING_COMMANDS)}")
-        ExtraCommands._load_level()
+        ExtraCommands._load_levelfile()
         try:  # 先把数据目录准备好，闹钟记录会写在里面
             self._data_dir.mkdir(parents=True, exist_ok=True)
         except OSError as e:
@@ -101,8 +84,7 @@ class ExtraCommands(Star):
 
     @staticmethod
     def _parse_args(message_str: str, range: tuple[int, int]) -> list[str]:
-        """解析参数。需要传入参数数量范围，如(0,2)。若参数数量不符合范围则抛出异常。
-        返回参数列表（不包含指令本身）。"""
+        """解析参数。需要传入参数数量范围，如(0,2)。若参数数量不符合范围则抛出异常。返回参数列表（不包含指令本身）。"""
         parts = message_str.strip().split()
         args_count = len(parts) - 1  # 去掉指令本身，参数数量
 
@@ -113,80 +95,6 @@ class ExtraCommands(Star):
         else:  # 参数数量符合范围
             parts = parts[1:]  # 去掉指令本身
             return parts
-
-    @staticmethod
-    def _load_level() -> bool:
-        global OWNER
-        global ADMIN_LIST
-        if not LEVEL_FILE.exists():
-            return False
-
-        try:
-            data = json.loads(LEVEL_FILE.read_text(encoding="utf-8"))
-            OWNER = next((k for k, v in data.items() if v == "owner"), "")
-            ADMIN_LIST = [k for k, v in data.items() if v == "admin"]
-            return True
-        except (json.JSONDecodeError, OSError):
-            return False
-
-    @staticmethod
-    def _mdf_level(id: str, level: str, ownercommand: bool = False) -> bool:
-        if LEVEL_FILE.exists():
-            try:
-                data = json.loads(LEVEL_FILE.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                return False
-        else:
-            data = {}
-
-        if ownercommand or (id != OWNER and level != "owner"):
-            data[id] = level
-
-        try:
-            LEVEL_FILE.write_text(
-                json.dumps(data, ensure_ascii=False, indent=4),
-                encoding="utf-8",
-            )
-        except OSError:
-            return False
-
-        return ExtraCommands._load_level()
-
-    @staticmethod
-    def _get_level(id: str) -> str:
-        if id is OWNER:
-            return "owner"
-        elif id in ADMIN_LIST:
-            return "admin"
-        else:
-            return "member"
-
-    @staticmethod
-    def _read_json(path: Path, default: Any) -> Any:
-        """读取 JSON 文件；文件不存在或解析失败时返回默认值。"""
-        if not path.is_file():
-            return default
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as e:
-            logger.error(f"读取 {path.name} 失败：{e}")
-            return default
-
-    @staticmethod
-    def _write_json(path: Path, payload: Any) -> bool:
-        """原子写入 JSON：先写临时文件再替换，避免中途失败写坏原文件。"""
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_name(path.name + ".tmp")
-            tmp.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=4),
-                encoding="utf-8",
-            )
-            os.replace(tmp, path)
-            return True
-        except OSError as e:
-            logger.error(f"写入 {path.name} 失败：{e}")
-            return False
 
     @staticmethod
     def _time_now() -> datetime:
@@ -225,12 +133,20 @@ class ExtraCommands(Star):
     @filter.command("help")
     async def help(self, event: AstrMessageEvent):
         """在官方文档后显示插件总览帮助"""
-        yield event.plain_result(EHELP_TEXT)
+        if Level._level_check(event.get_sender_id(), 0):
+            yield event.plain_result(EHELP_TEXT)
+        else:
+            raise PermissionError(Level._get_level_id(event.get_sender_id()), 0)
 
     # ========== ehelp ==========
     @filter.command("ehelp", alias={"ext"})
     async def ehelp(self, event: AstrMessageEvent):
         """显示插件总览帮助，或查看指定命令的帮助信息"""
+        if Level._level_check(event.get_sender_id(), 0):
+            pass
+        else:
+            raise PermissionError(Level._get_level_id(event.get_sender_id()), 0)
+
         logger.info(event.get_messages())
 
         target = self._parse_args(event.message_str, (0, 1))
@@ -238,21 +154,28 @@ class ExtraCommands(Star):
             yield event.plain_result(EHELP_TEXT)
             return
         else:  # 有参数：输出指定命令的帮助
-            help_text = get_help_text(target[0])
-            yield event.plain_result(
-                help_text if help_text is not None else not_found_text(target[0])
-            )
+            yield event.plain_result(get_help_text(target[0]))
 
     # ========== edata ==========
     @filter.command("edata")
     async def edata(self, event: AstrMessageEvent):
         """管理插件数据"""
+        if Level._level_check(event.get_sender_id(), 3):
+            pass
+        else:
+            raise PermissionError(Level._get_level_id(event.get_sender_id()), 3)
+
         yield event.plain_result(pending_text("data"))
 
     # ========== rand ==========
     @filter.command("rand", alias={"random"})
     async def rand(self, event: AstrMessageEvent):
         """生成随机数"""
+        if Level._level_check(event.get_sender_id(), 1):
+            pass
+        else:
+            raise PermissionError(Level._get_level_id(event.get_sender_id()), 1)
+
         global RAND_REPEAT  # 允许重复的开关
 
         flag = re.search(r"-r\s+(\S+)", event.message_str, re.I)
@@ -329,6 +252,11 @@ class ExtraCommands(Star):
     @filter.command("time")
     async def time(self, event: AstrMessageEvent):
         """显示时间"""
+        if Level._level_check(event.get_sender_id(), 1):
+            pass
+        else:
+            raise PermissionError(Level._get_level_id(event.get_sender_id()), 1)
+
         global TZ_DEFAULT
         args = self._parse_args(event.message_str, (0, 2))
         if args:
@@ -370,6 +298,10 @@ class ExtraCommands(Star):
         global OWNER
         global ADMIN_LIST
         senderid = event.get_sender_id()
+        if Level._level_check(senderid, 3):
+            pass
+        else:
+            raise PermissionError(Level._get_level_id(senderid), 3)
 
         if senderid != OWNER and senderid not in ADMIN_LIST:
             yield event.plain_result(str(PermissionError(self._get_level(senderid))))
@@ -388,6 +320,12 @@ class ExtraCommands(Star):
         global OWNER
         global ADMIN_LIST
         senderid = event.get_sender_id()
+        flag = bool(event.message_str.find("list"))
+        if flag:
+            # 显示管理员列表
+            yield event.plain_result(f"📋 管理员列表：{', '.join(ADMIN_LIST)}")
+            return
+
         targetid = re.search(r"\((\d{5,})\)\s*$", event.message_str)
         if targetid:
             targetid = targetid.group(1)
@@ -396,11 +334,12 @@ class ExtraCommands(Star):
         senderlevel = self._get_level(senderid)
 
         if targetid:
-            if senderid != OWNER and senderid not in ADMIN_LIST:  # 带参数：添加管理员
-                yield event.plain_result(str(PermissionError(senderlevel, "owner")))
-                return
+            if Level._level_check(event.get_sender_id(), 4):
+                pass
+            else:
+                raise PermissionError(Level._get_level_id(event.get_sender_id()), 4)
 
-            elif targetid == OWNER or targetid in ADMIN_LIST:
+            if targetid == OWNER or targetid in ADMIN_LIST:
                 yield event.plain_result(f"⚠️ {targetid} 已是 owner 或 管理员。")
                 return
 
@@ -433,12 +372,12 @@ class ExtraCommands(Star):
         senderlevel = self._get_level(senderid)
 
         if targetid:
+            if Level._level_check(event.get_sender_id(), 4):
+                pass
+            else:
+                raise PermissionError(Level._get_level_id(event.get_sender_id()), 4)
 
-            if senderid != OWNER:  # 带参数：撤回管理员
-                yield event.plain_result(str(PermissionError(senderlevel, "owner")))
-                return
-
-            elif targetid not in ADMIN_LIST:
+            if targetid not in ADMIN_LIST:
                 yield event.plain_result(f"⚠️ {targetid} 不是管理员。")
                 return
 
@@ -843,8 +782,11 @@ class ExtraCommands(Star):
     @filter.command("alarm")
     async def alarm(self, event: AstrMessageEvent):
         """设置闹钟"""
-        # /alarm set +30s 打招呼 -llm
-        # /alarm list
+        if Level._level_check(event.get_sender_id(), 1):
+            pass
+        else:
+            raise PermissionError(Level._get_level_id(event.get_sender_id()), 1)
+
         flag = bool(event.message_str.endswith("-llm"))
         args = self._parse_args(event.message_str, (0, 4))[0:3]  # 忽略"-llm"
         action = args[0].lower()
@@ -906,7 +848,6 @@ class ExtraCommands(Star):
 
             case _:  # 未知子命令
                 raise ArgsInputError(action, "set / list / del", get_help_text("alarm"))
-
 
     """
     插件生命周期
