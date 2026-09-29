@@ -1,6 +1,6 @@
 name: extra_commands
 display_name: Extra Commands
-desc: AstrBot 额外命令插件。 # 插件简短描述
-version: v0.1
+desc: 为 AstrBot 提供额外命令的插件。 # 插件简短描述
+version: v0.6
 author: 26T-awa
 repo: https://github.com/26T-awa/astrbot_plugin_extra_commands # 现地址

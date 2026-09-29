@@ -66,6 +66,7 @@ ALARM_PER_SESSION = 5  # 单个会话内允许同时存在的待触发闹钟数�
 ALARM_MAX_TOTAL = 50  # 所有会话合计的闹钟总数上限
 ALARM_DESC_MAX_LEN = 100  # 闹钟描述的字符数上限
 ALARM_ORIGIN = "extra_commands"  # 写在定时任务 payload 里的来源标记
+TOOL_ORIGIN = "tool"  # 写在定时任务 payload 里的来源标记
 
 
 @register("extra_commands", "_26T", "额外命令", "0.1")
@@ -331,19 +332,19 @@ class ExtraCommands(Star):
         global TZ_DEFAULT
         args = self._parse_args(event.message_str, (0, 2))
         if args:
-            if args[0] == "setzone": # setzone ?
+            if args[0] == "setzone":  # setzone ?
                 if len(args) < 2:
                     raise TooFewArgsError(len(args), 2)
-                else: # setzone <timezone>
+                else:  # setzone <timezone>
                     _timezone = TZ_DEFAULT = timezone(timedelta(hours=int(args[1])))
                     yield event.plain_result(f"⚠️ 已设置默认时区为 {TZ_DEFAULT}")
 
-            elif len(args) == 1 and args[0] in string.digits: # [timezone]
+            elif len(args) == 1 and args[0] in string.digits:  # [timezone]
                 _timezone = timezone(timedelta(hours=int(args[0])))
 
         else:
             _timezone = TZ_DEFAULT
-        
+
         now = datetime.now(_timezone)
         weekday = "一二三四五六日"[now.weekday()]
         yield event.plain_result(
@@ -688,7 +689,9 @@ class ExtraCommands(Star):
         except Exception as e:  # noqa: BLE001 - 发送失败不应影响插件运行
             logger.error(f"闹钟 #{alarm_id} 提醒发送失败：{e}")
 
-    async def _alarm_jobs(self, session: str | None = None) -> list[Any]:
+    async def _alarm_jobs(
+        self, session: str | None = None, *, with_tool: bool = False
+    ) -> list[Any]:
         """列出本插件登记的闹钟任务，可按会话过滤，按触发时间排序。"""
         cron_mgr = self._get_cron_manager()
         if cron_mgr is None:
@@ -698,18 +701,20 @@ class ExtraCommands(Star):
         except Exception as e:  # noqa: BLE001 - 读不到就当作没有闹钟
             logger.error(f"读取定时任务失败：{e}")
             return []
-
+        origins = (ALARM_ORIGIN, TOOL_ORIGIN) if with_tool else (ALARM_ORIGIN,)
         picked = [
             job
             for job in jobs
-            if self._payload(job).get("origin") == ALARM_ORIGIN
+            if self._payload(job).get("origin") in origins
             and (session is None or self._payload(job).get("session") == session)
         ]
         return sorted(picked, key=lambda job: self._job_run_ts(job) or 0.0)
 
-    async def _format_alarm_list(self, event: AstrMessageEvent) -> str:
+    async def _format_alarm_list(
+        self, event: AstrMessageEvent, with_tool: bool = True
+    ) -> str:
         """列出当前会话的闹钟。"""
-        jobs = await self._alarm_jobs(event.unified_msg_origin)
+        jobs = await self._alarm_jobs(event.unified_msg_origin, with_tool=with_tool)
         if not jobs:
             return (
                 "📭 本会话还没有闹钟，可用 /alarm set [时间] [描述] 设置一个。\n"
@@ -717,7 +722,15 @@ class ExtraCommands(Star):
             )
 
         now = time.time()
-        lines = [f"⏰ 本会话待触发闹钟（{len(jobs)}/{ALARM_PER_SESSION}）："]
+        # 本插件登记的闹铃和后台任务（工具直接建的）会混在一起，分开计数更清楚
+        alarm_n = sum(
+            1 for job in jobs if self._payload(job).get("origin") == ALARM_ORIGIN
+        )
+        head = f"⏰ 本会话待触发闹钟（共 {len(jobs)} 个"
+        if alarm_n != len(jobs):
+            head += f"，其中闹铃 {alarm_n}/{ALARM_PER_SESSION}"
+        head += "）："
+        lines = [head]
         for job in jobs:
             payload = self._payload(job)
             ts = self._job_run_ts(job)
@@ -727,10 +740,11 @@ class ExtraCommands(Star):
                 when = self._format_ts(ts)
                 left = f"（{self._format_duration(ts - now)}后）"
             how = "LLM" if getattr(job, "job_type", "") == "active_agent" else "直发"
-            lines.append(
-                f"#{payload.get('alarm_id', '?')} {when}{left}· "
-                f"{payload.get('desc', '')}（{how}）"
-            )
+            alarm_id = payload.get("alarm_id")
+            # 工具任务没有 alarm_id / desc，退回用任务名，免得显示成「#? · （LLM）」
+            tag = f"#{alarm_id} " if alarm_id else ""
+            desc = payload.get("desc") or getattr(job, "name", "") or "（无描述）"
+            lines.append(f"{tag}{when}{left}· {desc}（{how}）")
         lines.append("以上闹钟都已登记在 AstrBot 后台的「未来任务」里。")
         return "\n".join(lines)
 
@@ -831,14 +845,14 @@ class ExtraCommands(Star):
         """设置闹钟"""
         # /alarm set +30s 打招呼 -llm
         # /alarm list
-        flag = bool(event.message_str.endswith(" --llm" or " -llm"))
+        flag = bool(event.message_str.endswith("-llm"))
         args = self._parse_args(event.message_str, (0, 4))[0:3]  # 忽略"-llm"
         action = args[0].lower()
         match action:
             case "list":  # 查
                 if len(args) > 1:
                     raise TooManyArgsError(len(args), 1)
-                yield event.plain_result(self._format_alarm_list(event))
+                yield event.plain_result(await self._format_alarm_list(event))
                 return
 
             case "set":  # 设
@@ -892,6 +906,7 @@ class ExtraCommands(Star):
 
             case _:  # 未知子命令
                 raise ArgsInputError(action, "set / list / del", get_help_text("alarm"))
+
 
     """
     插件生命周期
