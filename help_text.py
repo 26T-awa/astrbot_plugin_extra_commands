@@ -17,6 +17,7 @@ EHELP_TEXT = """以下为插件Extra_Commands提供的额外命令，部分命�
 /random(/rand):生成随机数
 /time:显示时间
 /alarm:设置闹钟
+/rc(/randomchat):开关概率回复
 /op:添加管理员
 /deop:撤回管理员
 /ban:不再接受用户的指令请求（未实现）
@@ -46,6 +47,11 @@ HELP_TEXTS: dict[str, str] = {
     -/time [timezone]  显示指定时区的时间，默认显示本地时间。timezone为时区缩写或地区名，如“UTC”、“CST”、“Asia/Shanghai”
     -/time setzone <timezone>  设置默认时区""",
 
+    "rc": """/rc(/randomchat) :开关概率回复（需 admin）
+    -/rc on  开启：每 3 小时跑一次 roll_ask.py，命中才问一个问题
+    -/rc off  关闭：脚本不再掷骰，完全安静
+    -/rc status  查看当前开关状态""",
+
     "alarm": """/alarm :设置闹钟
     -/alarm set <time> <desc>  设置闹钟，time为时间格式，具体有“+30s | +5m | +2h | +1d”、“2026-09-27/07:30 | 09-27/07:30 | 07:30”、“1790465400（时间戳）”，desc为描述
     -/alarm list  查看本会话已登记的闹钟
@@ -74,6 +80,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "rand": ("random",),
     "time": (),
     "alarm": (),
+    "rc": ("randomchat",),
     "op": (),
     "deop": (),
     "forcequit": ("fq",),

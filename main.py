@@ -6,6 +6,7 @@ import signal
 import json
 import time
 import string
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -51,6 +52,26 @@ ALARM_DESC_MAX_LEN = 100  # 闹钟描述的字符数上限
 ALARM_ORIGIN = "extra_commands"  # 写在定时任务 payload 里的来源标记
 TOOL_ORIGIN = "tool"  # 写在定时任务 payload 里的来源标记
 
+# ========== 概率回复（/rc 开关，脚本掷骰，命中才用一次 LLM）==========
+RC_ORIGIN = "randomchat"  # 写在定时任务 payload 里的来源标记
+RC_JOB_NAME = "概率回复（脚本掷骰）"
+RC_CRON = "0 */3 * * *"  # 每 3 小时让脚本掷一次骰子
+RC_TIMEZONE = "Asia/Shanghai"
+RC_SCRIPT = "roll_ask.py"  # 掷骰脚本：命中打 HIT 退 0，未命中打 MISS 退 1
+RC_TIMEOUT = 30  # 单次脚本运行的超时秒数
+RC_LLM_TIMEOUT = 45  # 命中后生成问题的超时秒数
+RC_STATE_FILE = PLUGIN_DATA_DIR / "randomchat_state.json"
+RC_SYSTEM_PROMPT = (
+    "你在和一个熟悉的人聊天，现在主动问他一个问题。"
+    "一句话，自然、具体，不要堆砌表情符号，也不要提到任何机制或定时任务。"
+)
+RC_FALLBACKS = (
+    "今天有没有遇到什么让你想吐槽的事情？",
+    "最近有没有在认真做一件事？说来听听。",
+    "如果现在可以瞬移到任意一个地方，你会去哪里？",
+    "你上一次觉得「啊，这个挺有意思」是什么时候？",
+)
+
 
 @register("extra_commands", "_26T", "额外命令", "0.1")
 class ExtraCommands(Star):
@@ -72,10 +93,16 @@ class ExtraCommands(Star):
         except OSError as e:
             logger.error(f"创建插件数据目录失败：{e}")
         await self._setup_alarms()  # 闹钟是 AstrBot 的定时任务，启动时重新绑好处理器
+        await self._ensure_rc_job()  # 概率回复：脚本掷骰，命中才叫一次模型，开关由 /rc 控制
 
     """
     静态方法列表
     """
+
+    @staticmethod
+    def _get_level(id: str) -> str:
+        """返回 ID 对应的权限等级名（owner / admin / member / baned）。"""
+        return Level.level_num.get(Level._get_level_id(id), "member")
 
     @staticmethod
     def _split_args(message_str: str) -> list[str]:
@@ -295,15 +322,13 @@ class ExtraCommands(Star):
     @filter.command("forcequit", alias={"fq"})
     async def forcequit(self, event: AstrMessageEvent):
         """退出机器人（owner / admin）"""
-        global OWNER
-        global ADMIN_LIST
         senderid = event.get_sender_id()
         if Level._level_check(senderid, 3):
             pass
         else:
             raise PermissionError(Level._get_level_id(senderid), 3)
 
-        if senderid != OWNER and senderid not in ADMIN_LIST:
+        if senderid != Level.Owner and senderid not in Level.Admin_list:
             yield event.plain_result(str(PermissionError(self._get_level(senderid))))
             return
 
@@ -317,13 +342,11 @@ class ExtraCommands(Star):
     @filter.command("op")
     async def op(self, event: AstrMessageEvent):
         """无参数：认领 owner；带用户 ID：添加管理员"""
-        global OWNER
-        global ADMIN_LIST
         senderid = event.get_sender_id()
         flag = bool(event.message_str.find("list"))
         if flag:
             # 显示管理员列表
-            yield event.plain_result(f"📋 管理员列表：{', '.join(ADMIN_LIST)}")
+            yield event.plain_result(f"📋 管理员列表：{', '.join(Level.Admin_list)}")
             return
 
         targetid = re.search(r"\((\d{5,})\)\s*$", event.message_str)
@@ -339,7 +362,7 @@ class ExtraCommands(Star):
             else:
                 raise PermissionError(Level._get_level_id(event.get_sender_id()), 4)
 
-            if targetid == OWNER or targetid in ADMIN_LIST:
+            if targetid == Level.Owner or targetid in Level.Admin_list:
                 yield event.plain_result(f"⚠️ {targetid} 已是 owner 或 管理员。")
                 return
 
@@ -348,8 +371,8 @@ class ExtraCommands(Star):
             yield event.plain_result(f"✅ 已添加管理员：{targetid}")
 
         else:
-            if OWNER:
-                yield event.plain_result(f"⚠️ 已有 owner（{OWNER}），无法认领。")
+            if Level.Owner:
+                yield event.plain_result(f"⚠️ 已有 owner（{Level.Owner}），无法认领。")
                 return
 
             else:
@@ -361,8 +384,6 @@ class ExtraCommands(Star):
     @filter.command("deop")
     async def deop(self, event: AstrMessageEvent):
         """撤回管理员（owner 请直接编辑 json文件）"""
-        global OWNER
-        global ADMIN_LIST
         senderid = event.get_sender_id()
         targetid = re.search(r"\((\d{5,})\)\s*$", event.message_str)
         if targetid:
@@ -377,7 +398,7 @@ class ExtraCommands(Star):
             else:
                 raise PermissionError(Level._get_level_id(event.get_sender_id()), 4)
 
-            if targetid not in ADMIN_LIST:
+            if targetid not in Level.Admin_list:
                 yield event.plain_result(f"⚠️ {targetid} 不是管理员。")
                 return
 
@@ -848,6 +869,197 @@ class ExtraCommands(Star):
 
             case _:  # 未知子命令
                 raise ArgsInputError(action, "set / list / del", get_help_text("alarm"))
+
+    # ========== 概率回复（/rc 开关，脚本掷骰，命中才用一次 LLM）==========
+    def _read_rc_state(self) -> dict[str, Any]:
+        """读取 /rc 开关状态；文件缺失或损坏都当作「关闭」。"""
+        return self._read_state(RC_STATE_FILE)
+
+    def _write_rc_state(self, **fields: Any) -> dict[str, Any]:
+        """更新 /rc 状态并落盘。"""
+        state = self._read_rc_state()
+        state.update(fields)
+        state["updated_at"] = self._time_now().strftime("%Y-%m-%d %H:%M:%S")
+        RC_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(RC_STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False, indent=2)
+        except OSError as e:  # noqa: BLE001 - 写状态失败不该影响插件
+            logger.warning(f"/rc 状态写入失败：{e}")
+        return state
+
+    async def _rc_job(self) -> Any:
+        """取概率回复对应的 basic 任务；没有就返回 None。"""
+        cron_mgr = self._get_cron_manager()
+        if cron_mgr is None:
+            return None
+        for job in await cron_mgr.list_jobs("basic"):
+            if self._payload(job).get("origin") == RC_ORIGIN:
+                return job
+        return None
+
+    async def _ensure_rc_job(self, enabled: bool | None = None) -> Any:
+        """确保概率回复是一条 basic 任务，并按开关决定要不要调度。
+
+        重启后 basic 任务不会自动带回处理器，所以这里既补绑定，也补调度，
+        保证「关掉就彻底安静、开着就到点掷骰」。
+        """
+        cron_mgr = self._get_cron_manager()
+        if cron_mgr is None:
+            return None
+
+        state = self._read_rc_state()
+        want = bool(state.get("enabled")) if enabled is None else bool(enabled)
+        session = str(state.get("session") or "")
+        try:
+            job = await self._rc_job()
+            if job is None:
+                return await cron_mgr.add_basic_job(
+                    name=RC_JOB_NAME,
+                    cron_expression=RC_CRON,
+                    handler=self._fire_rc,
+                    description="概率回复（/rc 控制）：跑 roll_ask.py 掷骰，命中才叫一次模型",
+                    timezone=RC_TIMEZONE,
+                    payload={
+                        "origin": RC_ORIGIN,
+                        "session": session,
+                        "umo": session,
+                        "desc": "概率回复（/rc 控制）：脚本掷骰，命中才开口",
+                    },
+                    enabled=want,
+                    persistent=True,
+                )
+            cron_mgr._basic_handlers[job.job_id] = self._fire_rc
+            if bool(getattr(job, "enabled", False)) != want:
+                job = await cron_mgr.update_job(job.job_id, enabled=want)
+            elif want:
+                cron_mgr._schedule_job(job)  # 重启后重新登记调度
+            return job
+        except Exception as e:  # noqa: BLE001 - 任务登记失败不应拖垮插件加载
+            logger.error(f"概率回复任务初始化失败：{e}")
+            return None
+
+    async def _run_rc_script(self) -> tuple[int, str]:
+        """在插件目录里跑一次 roll_ask.py，返回 (退出码, 合并后的输出)。"""
+        script = Path(__file__).resolve().parent / RC_SCRIPT
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                str(script),
+                cwd=str(script.parent),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+        except OSError as e:  # 脚本不在 / 解释器起不来
+            return 127, f"（脚本无法启动：{e}）"
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=RC_TIMEOUT)
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except ProcessLookupError:  # 进程已经自己退出了
+                pass
+            await proc.wait()
+            return 124, "（脚本超时，已中止本次运行）"
+        code = proc.returncode if proc.returncode is not None else 0
+        return code, out.decode("utf-8", "replace")
+
+    async def _compose_rc_text(self, umo: str, last_text: str) -> str:
+        """命中后生成一个问题：优先让模型写，模型不可用就退回兜底问题。"""
+        try:
+            provider_id = await self.context.get_current_chat_provider_id(umo)
+            resp = await asyncio.wait_for(
+                self.context.llm_generate(
+                    chat_provider_id=provider_id,
+                    prompt=(
+                        "现在主动问他一个问题。"
+                        + (f"上一次已经问过「{last_text}」，这次换个话题。" if last_text else "")
+                    ),
+                    system_prompt=RC_SYSTEM_PROMPT,
+                ),
+                timeout=RC_LLM_TIMEOUT,
+            )
+            text = (resp.completion_text or "").strip()
+            if text:
+                return text
+            logger.warning("概率回复文案为空，本轮改用兜底问题")
+        except Exception as e:  # noqa: BLE001 - 模型不可用也要照常提问
+            logger.warning(f"概率回复文案生成失败，本轮改用兜底问题：{e}")
+
+        candidates = [t for t in RC_FALLBACKS if t != last_text]
+        return random.choice(candidates or list(RC_FALLBACKS))
+
+    async def _fire_rc(self, **kwargs: Any) -> None:
+        """概率回复的处理器：开关关着或脚本没命中，就一个字都不说。"""
+        state = self._read_rc_state()
+        if not state.get("enabled"):  # 双重保险：任务被误调度时也不说话
+            logger.debug("概率回复开关处于关闭状态，本轮跳过")
+            return
+
+        umo = str(state.get("session") or kwargs.get("umo") or kwargs.get("session") or "")
+        if not umo:
+            logger.error("概率回复缺少投递目标，本轮跳过")
+            return
+
+        code, raw = await self._run_rc_script()
+        if code not in (0, 1):  # 脚本自己出问题：记一笔日志，但不打扰他
+            logger.error(f"掷骰脚本异常（退出码 {code}）：{raw.strip()[:200]}")
+            return
+        if "HIT" not in raw:  # MISS：本轮连一次 LLM 调用都没有
+            logger.debug("概率回复本轮未命中（脚本判定），静默通过")
+            return
+
+        text = await self._compose_rc_text(umo, str(state.get("last_text") or ""))
+        try:
+            await self.context.send_message(umo, MessageChain([Comp.Plain(text)]))
+        except Exception as e:  # noqa: BLE001 - 发送失败不应影响插件运行
+            logger.error(f"概率回复发送失败：{e}")
+            return
+        self._write_rc_state(
+            last_text=text,
+            last_at=self._time_now().strftime("%Y-%m-%d %H:%M:%S"),
+            hits=int(state.get("hits") or 0) + 1,
+        )
+
+    @filter.command("rc", alias={"randomchat"})
+    async def rc(self, event: AstrMessageEvent):
+        """开关概率回复：/rc on|off|status"""
+        if Level._level_check(event.get_sender_id(), 3):
+            pass
+        else:
+            raise PermissionError(Level._get_level_id(event.get_sender_id()), 3)
+
+        args = self._parse_args(event.message_str, (0, 1))
+        action = args[0].lower() if args else "status"
+        state = self._read_rc_state()
+
+        if action in ("on", "off"):
+            turn_on = action == "on"
+            session = str(event.unified_msg_origin or state.get("session") or "")
+            if turn_on and not session:
+                yield event.plain_result("❌ 没能识别出会话，暂时无法开启概率回复。")
+                return
+            self._write_rc_state(enabled=turn_on, session=session)
+            await self._ensure_rc_job(enabled=turn_on)
+            if turn_on:
+                yield event.plain_result(
+                    f"🎲 概率回复已开启：每 3 小时跑一次 {RC_SCRIPT}，命中才开口，其余时候完全安静。"
+                )
+            else:
+                yield event.plain_result("🔇 概率回复已关闭，脚本那边不会再打扰了。")
+            return
+
+        if action in ("status", "state"):
+            job = await self._rc_job()
+            nxt = getattr(job, "next_run_time", None)
+            when = f"，下次判定 {nxt:%Y-%m-%d %H:%M:%S}" if isinstance(nxt, datetime) else ""
+            yield event.plain_result(
+                f"🎲 概率回复：{'开启' if state.get('enabled') else '关闭'}"
+                f"（已命中 {int(state.get('hits') or 0)} 次）{when}"
+            )
+            return
+
+        raise ArgsInputError(action, "on / off / status", get_help_text("rc"))
 
     """
     插件生命周期
