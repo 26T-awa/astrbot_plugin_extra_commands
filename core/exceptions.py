@@ -1,8 +1,8 @@
 """
-自定义异常处理
+自定义异常：命令校验失败时抛出，由 core.handlers 统一转成回复。
 """
 
-from level import Level  # 权限等级管理
+from .level import Level  # 权限等级管理
 
 
 class ExtraCommandsError(Exception):
@@ -32,7 +32,7 @@ class TooFewArgsError(ExtraCommandsError):
 class ArgsInputError(ExtraCommandsError):
     """参数错误"""
 
-    def __init__(self, got: str, limit: str, help_text: str = None):
+    def __init__(self, got: str, limit: str, help_text: str | None = None):
         self.got = got
         self.limit = limit
         self.help_text = help_text
@@ -45,11 +45,12 @@ class ArgsInputError(ExtraCommandsError):
 
 
 class PermissionError(ExtraCommandsError):
-    """权限越界错误"""
+    """权限越界错误，got / required 都是等级数字。"""
 
     def __init__(self, got: int, required: int = 3):
         self.got = got
         self.required = required
-        required = Level.level_str.get(required, "admin")
-        got = Level.level_str.get(got, "member")
-        super().__init__(f'权限越界！（需要 "{required}"，实际上是 {got}）')
+        super().__init__(
+            f'权限越界！（需要 "{Level.level_num.get(required, "admin")}"，'
+            f'实际上是 {Level.level_num.get(got, "member")}）'
+        )
