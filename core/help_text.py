@@ -8,23 +8,23 @@
 
 # ==================== 总览帮助（/ehelp、/help ext） ====================
 
-EHELP_TEXT = """以下为插件Extra_Commands提供的额外命令，部分命令尚未实现，使用时请注意。
+EHELP_TEXT = """以下为插件Extra_Commands提供的额外命令。
 /ehelp(/ext):弹出此帮助
     -/ehelp [command]  显示指定命令的帮助信息
 = = = - - - = = = - - - = = =
 实用命令：
-/edata:管理数据（未实现）
+/edata(/ed,/edt):管理用户自定义数据
 /random(/rand):生成随机数
 /time:显示时间
 /alarm:设置闹钟
 /rc(/randomchat):开关概率回复
 /op:添加管理员
 /deop:撤回管理员
-/ban:不再接受用户的指令请求（未实现）
+/ban:拉黑用户，不再受理其任何消息
 = = = - - - = = = - - - = = =
 调试命令：
 /forcequit:退出机器人
-/log:查看日志（未实现）
+/log:查看最近的日志
 """
 
 # ==================== 单指令帮助（键为主指令名） ====================
@@ -33,11 +33,15 @@ HELP_TEXTS: dict[str, str] = {
     "ehelp": """/ehelp(/ext) :弹出此帮助
     -/ehelp [command]  显示插件内指定命令的帮助信息""",
 
-    "edata": """/edata :管理数据（未实现）
-    -/edata get [key]  获取数据
-    -/edata set [key] [value]  设置数据
-    -/edata del [key]  删除数据
-    -/edata mod [key] [value]  修改数据""",
+    "edata": """/edata(/ed,/edt) :管理每个用户的自定义数据（默认操作自己，@某人 需 admin）
+    -/edata get [key] [@user]  查看数据；省略 key 时列出该用户全部数据
+    -/edata set <key> <value> [@user]  新建或覆盖键值（value 会尝试按 JSON 解析）
+    -/edata append <key> <value> [@user]  向列表类型的键追加一个元素
+    -/edata mod <key> <value> [@user]  修改已存在的键
+    -/edata del <key> [@user]  删除键
+    -/edata keys [@user]  列出该用户的所有键
+    -/edata clear [@user]  清空该用户的全部数据
+    -@某人 只能放在整条指令的最末尾，且必须是真实艾特（渲染成 @昵称(QQ号)）；手打的数字或放在中间都会被当成普通参数""",
 
     "rand": """/rand(/random) :生成随机数
     -/rand [min] [max] [count]  生成随机数。默认范围为 0~99；min≤max；count为不超过100的生成数量，默认1个
@@ -47,10 +51,11 @@ HELP_TEXTS: dict[str, str] = {
     -/time [timezone]  显示指定时区的时间，默认显示本地时间。timezone为时区缩写或地区名，如“UTC”、“CST”、“Asia/Shanghai”
     -/time setzone <timezone>  设置默认时区""",
 
-    "rc": """/rc(/randomchat) :开关概率回复（需 admin）
-    -/rc on  开启：每 3 小时跑一次 roll_ask.py，命中才问一个问题
-    -/rc off  关闭：脚本不再掷骰，完全安静
-    -/rc status  查看当前开关状态""",
+    "rc": """/rc(/randomchat) :开关概率回复（需 admin，按会话独立）
+    -/rc on  对本会话开启：每 3 小时跑一次 roll_ask.py，命中才问一个问题
+    -/rc off  对本会话关闭：脚本不再掷骰，完全安静
+    -/rc status  查看本会话的开关状态
+    -/rc list  查看所有开着概率回复的会话""",
 
     "alarm": """/alarm :设置闹钟
     -/alarm set <time> <desc>  设置闹钟，time为时间格式，具体有“+30s | +5m | +2h | +1d”、“2026-09-27/07:30 | 09-27/07:30 | 07:30”、“1790465400（时间戳）”，desc为描述
@@ -66,17 +71,23 @@ HELP_TEXTS: dict[str, str] = {
     "deop": """/deop :撤回管理员
     -/deop @<user>""",
 
-    "ban": """/ban :不再接受用户的指令请求（未实现）
-    -/ban @<user>""",
+    "ban": """/ban :拉黑用户，不再受理其任何消息（含指令）（需 owner / admin）
+    -/ban @<user>  拉黑，之后不再受理该用户的任何消息
+    -/ban list  查看黑名单
+    -/ban del @<user>  解除拉黑，恢复为普通成员""",
 
-    "log": """/log :查看日志（未实现）""",
+    "log": """/log :查看 AstrBot 最近的内存日志（需 owner / admin）
+    -/log [n]  取最近 n 条日志（默认 50，上限 500）交给模型分析，并附带一份日志文件
+    -/log [n] <问题>  把问题一并交给模型，让它针对日志回答
+    -/log -f [n]  只导出日志文件，不调用模型""",
 }
 
-# ==================== 别名与占位指令 ====================
+# ==================== 别名 ====================
 
 # 主指令 -> 别名；查询帮助时别名会被归一为主指令
 ALIASES: dict[str, tuple[str, ...]] = {
     "ehelp": ("ext",),
+    "edata": ("ed", "edt"),
     "rand": ("random",),
     "time": (),
     "alarm": (),
@@ -87,18 +98,9 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "log": (),
 }
 
-# 尚未实现、需以最简形式注册的指令：
-# 注册后它们才会出现在指令表中，`/ehelp <command>` 也能查到对应帮助。
-PENDING_COMMANDS: tuple[str, ...] = (
-    "edata",
-    "log",
-    "ban"
-)
-
 # ==================== 文案模板 ====================
 
 NOT_FOUND_TEXT = "未找到命令 {command} 的帮助信息，请使用 /ehelp ext 查看所有可用命令。"
-PENDING_TEXT = "⚠️ /{command} 尚未实现，以下为该指令的规划用法：\n{help}"
 
 
 # ==================== 查询接口 ====================
@@ -121,9 +123,3 @@ def get_help_text(command: str) -> str | None:
 def not_found_text(command: str) -> str:
     """未知指令的提示文案。"""
     return NOT_FOUND_TEXT.format(command=command)
-
-
-def pending_text(command: str) -> str:
-    """占位指令的回复：说明尚未实现，并附上该指令的规划用法。"""
-    main = normalize(command)
-    return PENDING_TEXT.format(command=main, help=HELP_TEXTS.get(main, ""))

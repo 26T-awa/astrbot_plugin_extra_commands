@@ -6,23 +6,27 @@
 必须写在本模块内，不能下沉到子模块。
 """
 
+from sys import maxsize
+
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Star, register
 
 from .commands import alarm as alarm_command
+from .commands import ban as ban_command
 from .commands import deop as deop_command
 from .commands import edata as edata_command
 from .commands import ehelp as ehelp_command
 from .commands import forcequit as forcequit_command
 from .commands import help as help_command
+from .commands import log as log_command
 from .commands import op as op_command
 from .commands import rand as rand_command
 from .commands import rc as rc_command
 from .commands import time as time_command
+from .core import guard
 from .core import storage
 from .core.handlers import catch_command_error
-from .core.help_text import PENDING_COMMANDS
 from .core.level import Level
 
 
@@ -32,7 +36,7 @@ class ExtraCommands(Star):
 
     async def initialize(self):
         """插件实例化后由 AstrBot 自动调用。"""
-        logger.info(f"额外命令插件加载成功，占位指令：{', '.join(PENDING_COMMANDS)}")
+        logger.info("额外命令插件加载成功")
         storage.ensure_data_dir()
         Level.load()
         await alarm_command.setup(self)  # 闹钟是 AstrBot 的定时任务，启动时重新绑好处理器
@@ -43,6 +47,14 @@ class ExtraCommands(Star):
         # 闹钟现在是 AstrBot 的定时任务，不随插件停用而消失；
         # 这里保留 basic 任务的处理器绑定，停用期间到点也还能把提醒发出去。
         logger.info("额外命令插件已停用，闹钟作为 AstrBot 定时任务继续保留")
+
+    # ========== 全局拦截 ==========
+
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=maxsize)
+    async def ban_guard(self, event: AstrMessageEvent):
+        """最高优先级：黑名单用户的消息（聊天与指令）在受理前直接拦掉"""
+        if guard.is_blocked(event):
+            event.stop_event()
 
     # ========== 帮助 ==========
 
@@ -60,7 +72,7 @@ class ExtraCommands(Star):
 
     # ========== 实用命令 ==========
 
-    @filter.command("edata")
+    @filter.command("edata", alias={"ed", "edt"})
     @catch_command_error
     async def edata(self, event: AstrMessageEvent):
         """管理插件数据"""
@@ -103,6 +115,18 @@ class ExtraCommands(Star):
     async def deop(self, event: AstrMessageEvent):
         """撤回管理员（owner 请直接编辑 json文件）"""
         yield await deop_command.run(self, event)
+
+    @filter.command("ban")
+    @catch_command_error
+    async def ban(self, event: AstrMessageEvent):
+        """拉黑用户、查看黑名单、解除拉黑（owner / admin）"""
+        yield await ban_command.run(self, event)
+
+    @filter.command("log")
+    @catch_command_error
+    async def log(self, event: AstrMessageEvent):
+        """查看最近的日志，交给模型分析并发一份文件（owner / admin）"""
+        yield await log_command.run(self, event)
 
     @filter.command("forcequit", alias={"fq"})
     @catch_command_error

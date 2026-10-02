@@ -18,12 +18,21 @@ def payload(job: Any) -> dict:
     return value if isinstance(value, dict) else {}
 
 
-async def find_job(plugin, origin: str, job_type: str = "basic") -> Any:
-    """按 payload 里的 origin 找一条定时任务；找不到时返回 None。"""
+async def find_job(
+    plugin, origin: str, session: str | None = None, job_type: str = "basic"
+) -> Any:
+    """按 payload 里的 origin 找一条定时任务；找不到时返回 None。
+
+    传了 `session` 时只认 payload 里 umo/session 与之相符的那条，用于
+    「一个会话一条任务」的场景（概率回复）。
+    """
     cron_mgr = manager(plugin)
     if cron_mgr is None:
         return None
     for job in await cron_mgr.list_jobs(job_type):
-        if payload(job).get("origin") == origin:
+        data = payload(job)
+        if data.get("origin") != origin:
+            continue
+        if session is None or str(data.get("umo") or data.get("session") or "") == session:
             return job
     return None

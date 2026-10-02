@@ -14,7 +14,9 @@ DATA_ROOT = PLUGIN_ROOT.parents[1]  # <AstrBot>/data
 PLUGIN_DATA_DIR = DATA_ROOT / "plugin_data" / PLUGIN_ROOT.name
 
 LEVEL_FILE = PLUGIN_DATA_DIR / "usergroup.json"  # 用户权限等级表
+DATA_FILE = PLUGIN_DATA_DIR / "data.json"  # /edata 的用户自定义数据
 LEGACY_ALARM_FILE = PLUGIN_DATA_DIR / "alarms.json"  # 旧版闹钟记录（启动时迁移成定时任务）
+LOG_DIR = PLUGIN_DATA_DIR / "logs"  # /log 导出的日志文件
 
 
 def ensure_data_dir() -> bool:
@@ -25,6 +27,18 @@ def ensure_data_dir() -> bool:
         logger.error(f"创建插件数据目录 {PLUGIN_DATA_DIR} 失败：{e}")
         return False
     return True
+
+
+def write_log_file(name: str, text: str) -> Path | None:
+    """把导出的日志写到 `LOG_DIR/name`，返回文件路径；写入失败返回 None。"""
+    path = LOG_DIR / name
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    except OSError as e:
+        logger.error(f"写入日志文件 {name} 失败：{e}")
+        return None
+    return path
 
 
 def load_json(path: Path) -> dict:

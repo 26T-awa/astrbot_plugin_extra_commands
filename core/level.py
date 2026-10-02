@@ -42,12 +42,15 @@ class Level:
 
     @classmethod
     def id_of(cls, uid: object) -> int:
-        """返回用户 ID 对应的等级数字：4 / 3 / 1。"""
+        """返回用户 ID 对应的等级数字：4 / 3 / 1 / 0。"""
         uid = "" if uid is None else str(uid)  # 统一成字符串，避免类型不一致
         if cls.Owner and uid == cls.Owner:  # 用 == 比较，is 比的是对象身份
             return cls.OWNER
         if uid in cls.Admin_list:
             return cls.ADMIN
+        level = cls.data.get(uid)  # 显式记过等级的用户（含被拉黑的）以记录为准
+        if level is not None and level in cls.level_num:
+            return level
         return cls.MEMBER
 
     @classmethod
