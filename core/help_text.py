@@ -11,6 +11,7 @@
 EHELP_TEXT = """以下为插件Extra_Commands提供的额外命令。
 /ehelp(/ext):弹出此帮助
     -/ehelp [command]  显示指定命令的帮助信息
+    -/ehelp !  把「命令帮助手册」PDF 作为文件发到当前会话
 = = = - - - = = = - - - = = =
 实用命令：
 /edata(/ed,/edt):管理用户自定义数据
@@ -23,7 +24,7 @@ EHELP_TEXT = """以下为插件Extra_Commands提供的额外命令。
 /ban:拉黑用户，不再受理其任何消息
 = = = - - - = = = - - - = = =
 调试命令：
-/forcequit:退出机器人
+/forcequit(/fq):退出机器人
 /log:查看最近的日志
 """
 
@@ -31,7 +32,8 @@ EHELP_TEXT = """以下为插件Extra_Commands提供的额外命令。
 
 HELP_TEXTS: dict[str, str] = {
     "ehelp": """/ehelp(/ext) :弹出此帮助
-    -/ehelp [command]  显示插件内指定命令的帮助信息""",
+    -/ehelp [command]  显示插件内指定命令的帮助信息
+    -/ehelp !  把「命令帮助手册.pdf」作为文件发到当前私聊 / 群聊""",
 
     "edata": """/edata(/ed,/edt) :管理每个用户的自定义数据（默认操作自己，@某人 需 admin）
     -/edata get [key] [@user]  查看数据；省略 key 时列出该用户全部数据
@@ -101,6 +103,10 @@ ALIASES: dict[str, tuple[str, ...]] = {
 # ==================== 文案模板 ====================
 
 NOT_FOUND_TEXT = "未找到命令 {command} 的帮助信息，请使用 /ehelp ext 查看所有可用命令。"
+
+MANUAL_MISSING_TEXT = """⚠️ 没找到「命令帮助手册.pdf」，暂时无法发送。
+请把手册放到这个位置：{path}
+（也可以先用 /ehelp ext 查看文字版帮助。）"""
 
 
 # ==================== 查询接口 ====================

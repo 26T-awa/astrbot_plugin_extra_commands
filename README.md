@@ -11,7 +11,7 @@ AstrBot 额外命令插件：随机数、时间与时区、闹钟、概率回复
 | 指令 | 别名 | 参数 | 权限 | 状态 |
 | ---------------- | ------------ | ------------------------------------------------- | ------------- | ------ |
 | `/help` | — | — | 所有人 | ✅ 可用 |
-| `/ehelp` | `/ext` | `[command]` | 所有人 | ✅ 可用 |
+| `/ehelp` | `/ext` | `[command]` / `!` | 所有人 | ✅ 可用 |
 | `/rand` | `/random` | `[-r <true\|false>] [min] [max] [count]` | 所有人 | ✅ 可用 |
 | `/time` | — | `[时区]`、`setzone <时区>` | 所有人 | ✅ 可用 |
 | `/alarm` | — | `set <时间> <描述> [-llm]`、`list`、`del #<编号>` | 所有人 | ✅ 可用 |
@@ -90,7 +90,7 @@ AstrBot 额外命令插件：随机数、时间与时区、闹钟、概率回复
 
 只给时刻（如 `07:30`）时会补成今天，如果今天该时刻已过则顺延到明天。
 
-**提醒方式**
+**提醒方式**：
 
 - 默认：到点由插件直接发消息（basic 任务，**不消耗 token**）
 - 描述末尾加 `-llm`：到点唤醒主 agent，让它用自己的语气组织提醒（active_agent 任务）
@@ -144,8 +144,11 @@ owner 与管理员不可被拉黑，也不能把自己拉黑；写入 `usergroup
 - `/help`：输出插件总览
 - `/ehelp`（或 `/ext`）：输出插件总览
 - `/ehelp <command>`：输出该指令的详细帮助，支持别名与 `/` 前缀（如 `/ehelp /random`），命令不存在时提示改用 `/ehelp ext`
+- `/ehelp !`：把 `命令帮助手册.pdf` 作为文件发到当前私聊 / 群聊（半角、全角感叹号都认）；文件不在时回复应有的放置路径
 
-帮助文本集中在 `core/help_text.py`，是帮助内容的唯一数据源：`EHELP_TEXT`（总览）、`HELP_TEXTS`（分命令）、`ALIASES`（别名归一），以及 `get_help_text()` / `not_found_text()` 两个查询接口。
+帮助文本集中在 `core/help_text.py`，是帮助内容的唯一数据源：`EHELP_TEXT`（总览）、`HELP_TEXTS`（分命令）、`ALIASES`（别名归一），以及 `get_help_text()` / `not_found_text()` / `MANUAL_MISSING_TEXT` 等查询与文案接口。
+
+命令帮助手册由 `.md` 导出，放在插件数据目录（见「数据与文件」）：插件更新不会覆盖它，换内容直接替换该 PDF 即可，不需要重载插件。手册路径只在 `commands/ehelp.py` 里定义（`HELP_PDF`），不在 `core/storage.py` 里登记。
 
 ## 权限体系（owner / admin / member）
 
@@ -182,6 +185,7 @@ owner 与管理员不可被拉黑，也不能把自己拉黑；写入 `usergroup
 | `usergroup.json` | 用户等级表 `{ID: owner/admin/member/baned}`（黑名单即等级 0） | ✅ 使用中 |
 | `data.json` | `/edata` 的用户自定义数据 `{ID: {键: 值}}` | ✅ 使用中 |
 | `randomchat_state.json` | `/rc` 各会话的开关、最近一次问题、命中次数 | ✅ 使用中 |
+| `命令帮助手册.pdf` | `/ehelp !` 发送的命令帮助手册（PDF）；不放也能用，只是发不出来 | 📥 自行放入 |
 | `alarms.json` | 旧版闹钟记录；启动时迁移为定时任务后改名为 `alarms.json.bak` | ♻️ 已迁移 |
 | `logs/` | `/log` 导出的日志文件（文件名带时间戳） | ✅ 使用中 |
 
@@ -192,6 +196,7 @@ owner 与管理员不可被拉黑，也不能把自己拉黑；写入 `usergroup
 1. 把插件目录放到 AstrBot 的 `data/plugins/` 下，目录名为 `astrbot_plugin_extra_commands`
 2. 重载插件，日志出现 `额外命令插件加载成功` 即加载成功（数据目录会自动创建）
 3. 部署后由管理员先发一次 `/op` 认领 owner
+4. （可选）把导出的 `命令帮助手册.pdf` 放进 `<AstrBot>/data/plugin_data/astrbot_plugin_extra_commands/`，`/ehelp !` 才发得出手册
 
 无第三方依赖，仅使用 Python 标准库与 AstrBot 内置 API（`/time` 的地区名时区需要 Python 自带的 `zoneinfo`，Windows 上需要 `tzdata`，AstrBot 环境默认已装）。
 
@@ -202,7 +207,7 @@ astrbot_plugin_extra_commands/
 ├── main.py            # 插件入口：Star 类、生命周期、每个命令的注册薄壳
 ├── commands/          # 一个命令一个模块（实现都在这里）
 │   ├── help.py        # /help
-│   ├── ehelp.py       # /ehelp
+│   ├── ehelp.py       # /ehelp（总览、单命令帮助、`!` 发 PDF 手册）
 │   ├── edata.py       # /edata
 │   ├── rand.py        # /rand
 │   ├── time.py        # /time
