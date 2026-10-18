@@ -31,8 +31,9 @@ from .core.level import Level
 
 try:  # 本机专用：「@」触发「锚」通道（commands/anchor_local.py 不随仓库分发）
     from .commands import anchor_local
-except ImportError:  # 公共仓库里没有这个文件，通道自动停用，其它命令不受影响
+except ImportError as e:  # 公共仓库里没有这个文件，通道自动停用，其它命令不受影响
     anchor_local = None
+    logger.debug(f"本机专用锚通道未启用：{e}")
 
 
 @register("extra_commands", "_26T", "额外命令", "0.1")
