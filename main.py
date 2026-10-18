@@ -29,6 +29,11 @@ from .core import storage
 from .core.handlers import catch_command_error
 from .core.level import Level
 
+try:  # 本机专用：「@」触发「锚」通道（commands/anchor_local.py 不随仓库分发）
+    from .commands import anchor_local
+except ImportError:  # 公共仓库里没有这个文件，通道自动停用，其它命令不受影响
+    anchor_local = None
+
 
 @register("extra_commands", "_26T", "额外命令", "0.1")
 class ExtraCommands(Star):
@@ -55,6 +60,14 @@ class ExtraCommands(Star):
         """最高优先级：黑名单用户的消息（聊天与指令）在受理前直接拦掉"""
         if guard.is_blocked(event):
             event.stop_event()
+
+    # ========== 本机专用：「@」触发「锚」通道 ==========
+
+    @filter.on_llm_request()
+    async def anchor_local_hook(self, event: AstrMessageEvent, req):
+        """本机专用：给夜莺补上「只有 @ 才能叫锚」的规则与转达指令。"""
+        if anchor_local is not None:
+            anchor_local.inject(event, req)
 
     # ========== 帮助 ==========
 

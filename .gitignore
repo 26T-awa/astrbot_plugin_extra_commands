@@ -211,3 +211,6 @@ main copy/
 test.py
 data/
 patch/
+
+# 本机专用：@ 触发「锚」通道的实现文件，不随仓库分发
+commands/anchor_local.py
