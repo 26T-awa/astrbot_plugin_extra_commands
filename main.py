@@ -68,7 +68,7 @@ class ExtraCommands(Star):
     async def anchor_local_hook(self, event: AstrMessageEvent, req):
         """本机专用：给夜莺补上「只有 @ 才能叫锚」的规则与转达指令。"""
         if anchor_local is not None:
-            anchor_local.inject(event, req)
+            await anchor_local.inject(event, req)
 
     # ========== 帮助 ==========
 
