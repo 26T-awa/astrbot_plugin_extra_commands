@@ -1,4 +1,4 @@
-"""/log：查看 AstrBot 最近的内存日志（仅 owner / admin 可用）。
+"""/log：查看 AstrBot 最近的内存日志（仅 AstrBot 管理员可用）。
 
 AstrBot 用 `LogBroker` 在内存里缓存最近 500 条日志（实例由
 `astrbot.core.log.LogManager` 持有），本模块只负责把日志取出来用：
@@ -47,7 +47,7 @@ LLM_FAILED = "⚠️ 模型没能给出分析结果，日志文件还是先发�
 
 
 async def run(plugin, event: AstrMessageEvent) -> MessageEventResult:
-    """把最近的内存日志发出来，默认再让模型读一遍（需 owner / admin）。"""
+    """把最近的内存日志发出来，默认再让模型读一遍（需 AstrBot 管理员）。"""
     ensure_level(event, Level.ADMIN)
     count, only_file, question = _parse_args(event.message_str)
 

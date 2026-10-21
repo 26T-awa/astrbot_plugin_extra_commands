@@ -3,5 +3,5 @@ display_name: Extra Commands
 desc: 为 AstrBot 提供额外命令的插件。 # 插件简短描述
 version: v1.0
 author: 26T-awa
-description: 为 AstrBot 提供额外命令的插件。加入了诸如/op、/forcequit、/log等命令。具体参阅README及/ehelp。 # 插件详细描述
+description: 为 AstrBot 提供额外命令的插件。加入了诸如 /ban、/forcequit、/log 等命令（管理员权限使用 AstrBot 官方 admins_id）。具体参阅README及/ehelp。 # 插件详细描述
 repo: https://github.com/26T-awa/astrbot_plugin_extra_commands # 现地址

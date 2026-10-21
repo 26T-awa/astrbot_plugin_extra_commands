@@ -45,7 +45,11 @@ class ArgsInputError(ExtraCommandsError):
 
 
 class PermissionError(ExtraCommandsError):
-    """权限越界错误，got / required 都是等级数字。"""
+    """权限越界错误，got / required 都是等级数字。
+
+    管理员判定已交给 AstrBot 官方 admins_id（`event.is_admin()`），
+    这里的数字只用于拼提示文案：0 = baned、1 = member、3 = admin。
+    """
 
     def __init__(self, got: int, required: int = 3):
         self.got = got

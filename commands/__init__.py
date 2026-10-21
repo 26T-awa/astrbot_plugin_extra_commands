@@ -10,8 +10,7 @@
 - edata          数据管理
 - rand           随机数
 - time           时间与时区
-- op / deop      owner 与管理员管理
-- ban            拉黑 / 查黑名单 / 解除拉黑
+- ban            拉黑 / 查黑名单 / 解除拉黑（管理员由官方 admins_id 判定）
 - forcequit      退出 AstrBot 进程
 - alarm          闹钟（登记为 AstrBot 定时任务）
 - rc             概率回复开关

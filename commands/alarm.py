@@ -304,7 +304,7 @@ async def _cancel(plugin, event: AstrMessageEvent, alarm_id: int) -> str:
             continue
 
         sender = event.get_sender_id()
-        if payload.get("creator_id") != sender and Level.name_of(sender) == "member":
+        if payload.get("creator_id") != sender and not event.is_admin():
             return "❌ 只能取消自己设置的闹钟。"
 
         try:

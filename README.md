@@ -1,10 +1,10 @@
 # astrbot-plugin-extra-commands
 
-AstrBot 额外命令插件：随机数、时间与时区、闹钟、概率回复、插件帮助，以及 owner / 管理员权限管理与进程退出。
+AstrBot 额外命令插件：随机数、时间与时区、闹钟、概率回复、插件帮助，以及基于 AstrBot 官方管理员体系的 /ban 与进程退出。
 
 > 作者：**26T-awa** · 版本：**v1.0** · [GitHub 仓库](https://github.com/26T-awa/astrbot_plugin_extra_commands)
 >
-> 其中 `/log` 会读取 AstrBot 的内存日志，导出成文件发给会话，并可交给模型通读分析（仅 owner / admin）。
+> 其中 `/log` 会读取 AstrBot 的内存日志，导出成文件发给会话，并可交给模型通读分析（仅 AstrBot 管理员）。
 
 ## 指令总览
 
@@ -15,13 +15,13 @@ AstrBot 额外命令插件：随机数、时间与时区、闹钟、概率回复
 | `/rand` | `/random` | `[-r <true\|false>] [min] [max] [count]` | 所有人 | ✅ 可用 |
 | `/time` | — | `[时区]`、`setzone <时区>` | 所有人 | ✅ 可用 |
 | `/alarm` | — | `set <时间> <描述> [-llm]`、`list`、`del #<编号>` | 所有人 | ✅ 可用 |
-| `/rc` | `/randomchat` | `on` / `off` / `status` / `list` | admin | ✅ 可用 |
-| `/op` | — | 无参数认领 owner；`@某人` 加管理员；`list` 看列表 | 见「权限体系」 | ✅ 可用 |
-| `/deop` | — | `@某人` | owner | ✅ 可用 |
-| `/forcequit` | `/fq` | — | owner / admin | ✅ 可用 |
-| `/edata` | `/ed`,`/edt` | `get [key]` / `set <key> <value>` / `append <key> <value>` / `mod <key> <value>` / `del <key>` / `keys` / `clear` | 自己：所有人；`@某人`：admin | ✅ 可用 |
-| `/ban` | — | `@某人` / `list` / `del @某人` | owner / admin | ✅ 可用 |
-| `/log` | — | `[n]`、`[n] <问题>`、`-f [n]` | owner / admin | ✅ 可用 |
+| `/rc` | `/randomchat` | `on` / `off` / `status` / `list` | AstrBot 管理员 | ✅ 可用 |
+| `/forcequit` | `/fq` | — | AstrBot 管理员 | ✅ 可用 |
+| `/edata` | `/ed`,`/edt` | `get [key]` / `set <key> <value>` / `append <key> <value>` / `mod <key> <value>` / `del <key>` / `keys` / `clear` | 自己：所有人；`@某人`：AstrBot 管理员 | ✅ 可用 |
+| `/ban` | — | `@某人` / `list` / `del @某人` | AstrBot 管理员 | ✅ 可用 |
+| `/log` | — | `[n]`、`[n] <问题>`、`-f [n]` | AstrBot 管理员 | ✅ 可用 |
+
+> 管理员的增删由 AstrBot 官方插件 `builtin_commands_extension` 的 `/op <id>`、`/deop <id>` 提供（写入 AstrBot 的 `admins_id`），本插件不再提供 `/op`、`/deop`。
 
 ## 指令说明
 
@@ -49,7 +49,7 @@ AstrBot 额外命令插件：随机数、时间与时区、闹钟、概率回复
 
 别名：`/ed`、`/edt`（与 `/edata` 完全等价）。
 
-把每个用户自己的键值数据存进 `<数据目录>/data.json`（形如 `{"<用户ID>": {"<键>": <值>}}`），用于记待办、点数之类的小数据。默认操作**发送者自己**的数据；在消息末尾 `@某人`（需要 admin）则操作对方的。
+把每个用户自己的键值数据存进 `<数据目录>/data.json`（形如 `{"<用户ID>": {"<键>": <值>}}`），用于记待办、点数之类的小数据。默认操作**发送者自己**的数据；在消息末尾 `@某人`（需要 AstrBot 管理员）则操作对方的。
 
 - `/edata get [key]`：查看；省略 `key` 时列出该用户全部数据
 - `/edata set <key> <value>`：新建或覆盖键值
@@ -78,7 +78,7 @@ AstrBot 额外命令插件：随机数、时间与时区、闹钟、概率回复
 
 - `/alarm set <时间> <描述>`：设置闹钟
 - `/alarm list`：查看本会话的闹钟（含工具直接登记的提醒任务）
-- `/alarm del #<编号>`：取消闹钟，编号见 `/alarm list`；只能取消自己设置的，admin / owner 可以取消任意一条
+- `/alarm del #<编号>`：取消闹钟，编号见 `/alarm list`；只能取消自己设置的，AstrBot 管理员可以取消任意一条
 
 **时间写法**（相对时间为起点是“现在”）：
 
@@ -97,7 +97,7 @@ AstrBot 额外命令插件：随机数、时间与时区、闹钟、概率回复
 
 **配额**：单个会话最多 5 个闹钟，所有会话合计最多 50 个，描述不超过 100 字。
 
-### `/rc` — 概率回复开关（admin，按会话独立）
+### `/rc` — 概率回复开关（AstrBot 管理员，按会话独立）
 
 每个会话各自一份开关：在哪个会话里发 `/rc on`，就只给那个会话注册一条每 3 小时触发一次的定时任务，执行 `scripts/roll_ask.py` 掷骰（命中概率 1/8）：
 
@@ -106,16 +106,14 @@ AstrBot 额外命令插件：随机数、时间与时区、闹钟、概率回复
 
 `/rc on` 对本会话开启、`/rc off` 对本会话关闭、`/rc status` 查看本会话的状态与已命中次数、`/rc list` 列出所有开着的会话（最多同时开 20 个）。开关按会话保存在 `randomchat_state.json` 的 `sessions` 里，关掉的会话不再掷骰，也不影响其他会话。
 
-### `/op`、`/deop` — owner 与管理员
+### 管理员与权限（AstrBot 官方 `admins_id`）
 
-- `/op`（无参数）：认领 owner，**仅当还没有 owner 时**生效
-- `/op @某人`：把对方加为管理员（owner 操作）
-- `/op list`：查看管理员列表
-- `/deop @某人`：撤回管理员（owner 操作）；owner 自己无法用指令撤回，请直接编辑 `usergroup.json`
+- 管理员由 AstrBot 官方插件 `builtin_commands_extension` 的 `/op <id>`、`/deop <id>` 管理（写入全局配置 `admins_id`）
+- AstrBot 在消息管线里把 `admins_id` 中的用户标记为管理员，本插件直接用 `event.is_admin()` 判定
+- 本插件不再提供 `/op`、`/deop`；旧版 `usergroup.json` 里的 owner/admin 记录读取时按普通成员处理
+- 需要管理员权限的命令：`/ban`、`/log`、`/forcequit`、`/rc`、`/edata @某人`
 
-目标用户 ID 从消息里的 @ 消息段提取（也支持直接打 QQ 号）。注意：**必须真正 @ 对方**，因为昵称里可能带空格，手打“@昵称”并不可靠。
-
-### `/ban` — 拉黑用户（owner / admin）
+### `/ban` — 拉黑用户（AstrBot 管理员）
 
 拉黑就是把对方降到等级 0，之后不再受理其任何消息（日常聊天与指令都拦下）：
 
@@ -123,9 +121,9 @@ AstrBot 额外命令插件：随机数、时间与时区、闹钟、概率回复
 - `/ban list`：查看黑名单（等级为 `baned` 的记录）
 - `/ban del @某人`：解除拉黑，恢复为普通成员
 
-owner 与管理员不可被拉黑，也不能把自己拉黑；写入 `usergroup.json` 失败时会回复「写入失败」，内存保持不变。
+AstrBot 管理员不可被拉黑，也不能把自己拉黑；写入 `usergroup.json` 失败时会回复「写入失败」，内存保持不变。
 
-### `/log` — 查看日志（owner / admin）
+### `/log` — 查看日志（AstrBot 管理员）
 
 读取 AstrBot 内存日志缓存里最近的记录（剥掉终端颜色码），导出一份文件发到会话，默认再让模型通读分析：
 
@@ -135,7 +133,7 @@ owner 与管理员不可被拉黑，也不能把自己拉黑；写入 `usergroup
 
 日志缓存经 `astrbot.core.log.LogManager._log_broker` 取得，取不到时回退到 `logging.getLogger("astrbot")` 上的 `LogQueueHandler`；文件写在 `<数据目录>/logs/` 下、文件名带时间戳，交给模型的正文超过 12000 字时只保留最新的一段。模型不可用时仍会把文件发出来，并附一句提示。
 
-### `/forcequit` — 退出 AstrBot（owner / admin）
+### `/forcequit` — 退出 AstrBot（AstrBot 管理员）
 
 回复后延迟 2 秒，先发 `SIGINT` 走 AstrBot 的正常退出流程；3 秒后仍未退出则强制结束进程。
 
@@ -150,21 +148,15 @@ owner 与管理员不可被拉黑，也不能把自己拉黑；写入 `usergroup
 
 命令帮助手册由 `.md` 导出，放在插件数据目录（见「数据与文件」）：插件更新不会覆盖它，换内容直接替换该 PDF 即可，不需要重载插件。手册路径只在 `commands/ehelp.py` 里定义（`HELP_PDF`），不在 `core/storage.py` 里登记。
 
-## 权限体系（owner / admin / member）
+## 权限体系（AstrBot 官方管理员）
 
-等级表保存在 `usergroup.json`，是一张「用户 ID → 等级」的映射：
+本插件不再维护自己的 owner / admin 名单，权限完全交给 AstrBot 官方体系：
 
-```json
-{
-    "123456789": "owner",
-    "987654321": "admin"
-}
-```
-
-- **等级数字**：`owner = 4`、`admin = 3`、`member = 1`、`baned = 0`；判定顺序 owner → admin → member
-- **加载时机**：插件 `initialize()` 时读一次；每次 `/op`、`/deop` 修改成功后立即写盘并刷新内存中的 `Owner` / `Admin_list`
-- **认领**：`/op`（无参数）谁先发谁成为 owner，请部署后第一时间认领；已有 owner 后该分支会拒绝
-- **权限表**：`/op @某人`、`/deop` 需要 owner；`/edata`、`/rc`、`/forcequit`、`/ban` 需要 admin 及以上；其余指令所有人可用
+- **唯一来源**：AstrBot 全局配置 `cmd_config.json` 的 `admins_id`（`/op`、`/deop` 由官方插件 `builtin_commands_extension` 维护）
+- **判定方式**：AstrBot 在消息管线里把 `admins_id` 里的用户标记为管理员，插件侧直接读 `event.is_admin()`
+- **本插件只保留封禁名单**：`usergroup.json` 仍按 `{用户 ID: baned/member}` 存放 `/ban` 的黑名单；旧版写入的 `owner(4)` / `admin(3)` 记录在读取时一律按普通成员处理
+- **权限表**：`/ban`、`/log`、`/forcequit`、`/rc`、`/edata @某人` 需要 AstrBot 管理员；其余指令所有人可用
+- **管理员保护**：`/ban` 会查 `admins_id`，拒绝拉黑 AstrBot 管理员；管理员也不能拉黑自己
 
 ## 黑名单与全局拦截
 
@@ -182,7 +174,7 @@ owner 与管理员不可被拉黑，也不能把自己拉黑；写入 `usergroup
 
 | 文件 | 用途 | 状态 |
 | ---------------------- | -------------------------------------- | -------- |
-| `usergroup.json` | 用户等级表 `{ID: owner/admin/member/baned}`（黑名单即等级 0） | ✅ 使用中 |
+| `usergroup.json` | `/ban` 的封禁名单 `{ID: baned/member}`（旧 owner/admin 记录读取时按 member 处理） | ✅ 使用中 |
 | `data.json` | `/edata` 的用户自定义数据 `{ID: {键: 值}}` | ✅ 使用中 |
 | `randomchat_state.json` | `/rc` 各会话的开关、最近一次问题、命中次数 | ✅ 使用中 |
 | `命令帮助手册.pdf` | `/ehelp !` 发送的命令帮助手册（PDF）；不放也能用，只是发不出来 | 📥 自行放入 |
@@ -195,7 +187,7 @@ owner 与管理员不可被拉黑，也不能把自己拉黑；写入 `usergroup
 
 1. 把插件目录放到 AstrBot 的 `data/plugins/` 下，目录名为 `astrbot_plugin_extra_commands`
 2. 重载插件，日志出现 `额外命令插件加载成功` 即加载成功（数据目录会自动创建）
-3. 部署后由管理员先发一次 `/op` 认领 owner
+3. 确认 AstrBot 的 `admins_id` 里有你的账号（WebUI 配置，或由官方 `/op <id>` 授权）；本插件不再需要 `/op` 认领
 4. （可选）把导出的 `命令帮助手册.pdf` 放进 `<AstrBot>/data/plugin_data/astrbot_plugin_extra_commands/`，`/ehelp !` 才发得出手册
 
 无第三方依赖，仅使用 Python 标准库与 AstrBot 内置 API（`/time` 的地区名时区需要 Python 自带的 `zoneinfo`，Windows 上需要 `tzdata`，AstrBot 环境默认已装）。
@@ -211,8 +203,6 @@ astrbot_plugin_extra_commands/
 │   ├── edata.py       # /edata
 │   ├── rand.py        # /rand
 │   ├── time.py        # /time
-│   ├── op.py          # /op
-│   ├── deop.py        # /deop
 │   ├── ban.py         # /ban（拉黑 / 名单 / 解除）
 │   ├── log.py         # /log（读内存日志、导出文件、交给模型）
 │   ├── forcequit.py   # /forcequit
@@ -220,9 +210,9 @@ astrbot_plugin_extra_commands/
 │   └── rc.py          # /rc（概率回复）
 ├── core/              # 与具体命令无关的公共设施
 │   ├── storage.py     # 数据目录与 JSON 读写
-│   ├── level.py       # 权限等级表与判定
+│   ├── level.py       # 封禁名单（/ban 用；权限已交给官方 admins_id）
 │   ├── guard.py       # 黑名单全局拦截判定
-│   ├── permissions.py # 命令权限校验（ensure_level）
+│   ├── permissions.py # 命令权限校验（MEMBER 人人可用 / ADMIN 认官方管理员）
 │   ├── args.py        # 参数解析（含从 @ 段取用户 ID）
 │   ├── timeutil.py    # 时间 / 时区 / 闹钟时间解析
 │   ├── cron.py        # AstrBot 定时任务的公共操作
@@ -260,6 +250,7 @@ astrbot_plugin_extra_commands/
 - `/alarm`、`/rc` 依赖 AstrBot 的定时任务管理器（`context.cron_manager`），旧版本没有它时 `/alarm` 会提示无法设置
 - `/alarm` 恢复 basic 任务处理器时会写入 `CronJobManager._basic_handlers`（AstrBot 未提供公开 API）
 - `alarm list` 会把工具直接登记的任务（payload 里 `origin=tool`）一并列出，它们的名额不计入本插件的 5 个上限
+- 管理员完全依赖 AstrBot 官方 `admins_id`：旧版 `usergroup.json` 里的 owner/admin 记录不再具有权限；若需要管理员，请用 WebUI 或官方 `/op` 配置
 
 ## 许可证
 

@@ -1,113 +1,95 @@
-"""用户权限等级管理（owner / admin / member / baned）。
+"""封禁名单（/ban）与旧等级文件兼容。
 
-等级表存放在 `<数据目录>/usergroup.json`：
+权限已经统一交给 AstrBot 官方管理员体系（`admins_id` / `event.is_admin()`），
+本模块只保留 `/ban` 需要的封禁名单：等级 0 = `baned`，其余一律按普通成员处理。
 
-    {"123456789": "owner", "987654321": "admin"}
+名单仍存放在 `<数据目录>/usergroup.json`，保持旧文件可读：
 
-插件启动时读一次；每次 /op、/deop 修改成功后立即写盘并刷新内存里的
-`Owner` 与 `Admin_list`，所以判定等级时不需要反复读文件。
+    {"123456789": "baned", "987654321": "member"}
+
+旧版写入的 owner(4) / admin(3) 记录在读取时按普通成员处理，不再具有权限含义。
 """
 
 from .storage import LEVEL_FILE, load_json, save_json
 
 
 class Level:
-    """权限等级表及其判定。等级数字越大权限越高。"""
+    """封禁名单。只区分「已拉黑」和「普通成员」。"""
 
-    level_str = {"owner": 4, "admin": 3, "member": 1, "baned": 0}
-    level_num = {4: "owner", 3: "admin", 1: "member", 0: "baned"}
+    level_str = {"admin": 3, "member": 1, "baned": 0}
+    level_num = {3: "admin", 1: "member", 0: "baned"}
 
-    OWNER = 4
-    ADMIN = 3
+    ADMIN = 3  # 兼容命令侧的「需要管理员」参数；实际判定见 core.permissions
     MEMBER = 1
     BANED = 0
 
-    Owner = ""  # 当前 owner 的用户 ID；空串表示还没有人认领
-    Admin_list: list[str] = []  # 当前所有管理员的用户 ID
-    data: dict[str, int] = {}  # {用户 ID: 等级数字}
+    data: dict[str, int] = {}  # {用户 ID: 等级数字}，只存 baned / member
 
     @classmethod
     def load(cls) -> bool:
-        """从 usergroup.json 读取等级表并刷新 Owner / Admin_list。"""
+        """从 usergroup.json 读取名单，把旧版的 owner/admin 记录降级为普通成员。"""
         raw = load_json(LEVEL_FILE)
         data: dict[str, int] = {}
         for uid, raw_level in raw.items():
-            level = cls._normalize(raw_level)
-            if level is None:  # 认不出的等级按普通成员处理
-                level = cls.MEMBER
-            data[str(uid)] = level
+            data[str(uid)] = cls.BANED if cls._is_baned(raw_level) else cls.MEMBER
         cls.data = data
-        cls.refresh_roles()
         return True
 
     @classmethod
     def id_of(cls, uid: object) -> int:
-        """返回用户 ID 对应的等级数字：4 / 3 / 1 / 0。"""
-        uid = "" if uid is None else str(uid)  # 统一成字符串，避免类型不一致
-        if cls.Owner and uid == cls.Owner:  # 用 == 比较，is 比的是对象身份
-            return cls.OWNER
-        if uid in cls.Admin_list:
-            return cls.ADMIN
-        level = cls.data.get(uid)  # 显式记过等级的用户（含被拉黑的）以记录为准
-        if level is not None and level in cls.level_num:
-            return level
-        return cls.MEMBER
+        """0 = 已拉黑，1 = 普通成员（管理员身份不再由这里判定）。"""
+        uid = "" if uid is None else str(uid)
+        return cls.data.get(uid, cls.MEMBER)
+
+    @classmethod
+    def is_banned(cls, uid: object) -> bool:
+        """该用户是否在黑名单里。"""
+        return cls.id_of(uid) == cls.BANED
 
     @classmethod
     def name_of(cls, uid: object) -> str:
-        """返回用户 ID 对应的等级名：owner / admin / member / baned。"""
+        """返回 baned / member，仅用于展示。"""
         return cls.level_num.get(cls.id_of(uid), "member")
 
     @classmethod
-    def check(cls, sender_id: object, required_level: int) -> bool:
-        """等级是否达到 required_level。"""
-        return cls.id_of(sender_id) >= required_level
-
-    @classmethod
-    def refresh_roles(cls) -> None:
-        """按 data 重新整理 Owner 与 Admin_list。"""
-        cls.Owner = next(
-            (uid for uid, level in cls.data.items() if level == cls.OWNER), ""
-        )
-        cls.Admin_list = [
-            uid for uid, level in cls.data.items() if level == cls.ADMIN
-        ]
-
-    @classmethod
-    def set_level(
-        cls, uid: object, new_level: int | str, owner_command: bool = False
-    ) -> bool:
-        """修改用户等级并写盘。
-
-        `owner_command` 为 True 时表示这次改动由 owner 发起（认领流程），
-        否则不允许改写 owner 自己的等级。
-        """
+    def set_level(cls, uid: object, new_level: int | str) -> bool:
+        """修改某个用户的封禁状态并写盘；只接受 baned(0) / member(1)。"""
         level = cls._normalize(new_level)
         if level is None:
             return False
-        uid = str(uid)
-        if cls.Owner and uid == cls.Owner and not owner_command:
-            return False
-
         data = dict(cls.data)
-        data[uid] = level
+        data[str(uid)] = level
         if not save_json(LEVEL_FILE, data):
             return False  # 写盘失败时保持内存不变，避免内存与文件不一致
         cls.data = data
-        cls.refresh_roles()
         return True
 
     @staticmethod
+    def _is_baned(raw: object) -> bool:
+        """旧文件里的等级值是否表示「已拉黑」。"""
+        if isinstance(raw, bool):
+            return False
+        if isinstance(raw, int):
+            return raw == Level.BANED
+        if isinstance(raw, str):
+            return raw.strip().lower() in ("baned", "banned", "0")
+        return False
+
+    @staticmethod
     def _normalize(raw: object) -> int | None:
-        """把等级值统一成数字。支持 4/3/1/0 或 owner/admin/member/baned，认不出返回 None。"""
+        """把等级值统一成 baned(0) / member(1)，认不出返回 None。"""
         if isinstance(raw, bool):
             return None
         if isinstance(raw, int):
-            return raw if raw in Level.level_num else None
+            return raw if raw in (Level.BANED, Level.MEMBER) else None
         if isinstance(raw, str):
             text = raw.strip().lower()
             if text.isdigit():
                 num = int(text)
-                return num if num in Level.level_num else None
-            return Level.level_str.get(text)
+                return num if num in (Level.BANED, Level.MEMBER) else None
+            return {
+                "baned": Level.BANED,
+                "banned": Level.BANED,
+                "member": Level.MEMBER,
+            }.get(text)
         return None

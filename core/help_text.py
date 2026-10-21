@@ -19,13 +19,13 @@ EHELP_TEXT = """以下为插件Extra_Commands提供的额外命令。
 /time:显示时间
 /alarm:设置闹钟
 /rc(/randomchat):开关概率回复
-/op:添加管理员
-/deop:撤回管理员
 /ban:拉黑用户，不再受理其任何消息
 = = = - - - = = = - - - = = =
 调试命令：
 /forcequit(/fq):退出机器人
 /log:查看最近的日志
+= = = - - - = = = - - - = = =
+管理员权限由 AstrBot 官方 admins_id 判定，/op、/deop 由官方内置指令扩展提供。
 """
 
 # ==================== 单指令帮助（键为主指令名） ====================
@@ -35,7 +35,7 @@ HELP_TEXTS: dict[str, str] = {
     -/ehelp [command]  显示插件内指定命令的帮助信息
     -/ehelp !  把「命令帮助手册.pdf」作为文件发到当前私聊 / 群聊""",
 
-    "edata": """/edata(/ed,/edt) :管理每个用户的自定义数据（默认操作自己，@某人 需 admin）
+    "edata": """/edata(/ed,/edt) :管理每个用户的自定义数据（默认操作自己，@某人 需 AstrBot 管理员）
     -/edata get [key] [@user]  查看数据；省略 key 时列出该用户全部数据
     -/edata set <key> <value> [@user]  新建或覆盖键值（value 会尝试按 JSON 解析）
     -/edata append <key> <value> [@user]  向列表类型的键追加一个元素
@@ -53,7 +53,7 @@ HELP_TEXTS: dict[str, str] = {
     -/time [timezone]  显示指定时区的时间，默认显示本地时间。timezone为时区缩写或地区名，如“UTC”、“CST”、“Asia/Shanghai”
     -/time setzone <timezone>  设置默认时区""",
 
-    "rc": """/rc(/randomchat) :开关概率回复（需 admin，按会话独立）
+    "rc": """/rc(/randomchat) :开关概率回复（需 AstrBot 管理员，按会话独立）
     -/rc on  对本会话开启：每 3 小时跑一次 roll_ask.py，命中才问一个问题
     -/rc off  对本会话关闭：脚本不再掷骰，完全安静
     -/rc status  查看本会话的开关状态
@@ -65,20 +65,15 @@ HELP_TEXTS: dict[str, str] = {
     -/alarm del #<id>  删除闹钟，id为闹钟编号""",
 
     # ---------------- 调试命令 ----------------
-    "forcequit": """/forcequit :退出机器人""",
+    "forcequit": """/forcequit :退出机器人（需 AstrBot 管理员）""",
 
-    "op": """/op :添加管理员。无参数时将认领Owner权限，请在plugin_data中修改usergroup.json文件的owner字段为自己的QQ号以完成认领
-    -/op @<user>""",
-
-    "deop": """/deop :撤回管理员
-    -/deop @<user>""",
-
-    "ban": """/ban :拉黑用户，不再受理其任何消息（含指令）（需 owner / admin）
+    "ban": """/ban :拉黑用户，不再受理其任何消息（含指令）（需 AstrBot 管理员）
     -/ban @<user>  拉黑，之后不再受理该用户的任何消息
     -/ban list  查看黑名单
-    -/ban del @<user>  解除拉黑，恢复为普通成员""",
+    -/ban del @<user>  解除拉黑，恢复为普通成员
+    -管理员由官方 /op、/deop 管理；不能拉黑 AstrBot 管理员""",
 
-    "log": """/log :查看 AstrBot 最近的内存日志（需 owner / admin）
+    "log": """/log :查看 AstrBot 最近的内存日志（需 AstrBot 管理员）
     -/log [n]  取最近 n 条日志（默认 50，上限 500）交给模型分析，并附带一份日志文件
     -/log [n] <问题>  把问题一并交给模型，让它针对日志回答
     -/log -f [n]  只导出日志文件，不调用模型""",
@@ -94,8 +89,6 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "time": (),
     "alarm": (),
     "rc": ("randomchat",),
-    "op": (),
-    "deop": (),
     "forcequit": ("fq",),
     "log": (),
 }

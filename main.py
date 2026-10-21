@@ -14,13 +14,11 @@ from astrbot.api.star import Star, register
 
 from .commands import alarm as alarm_command
 from .commands import ban as ban_command
-from .commands import deop as deop_command
 from .commands import edata as edata_command
 from .commands import ehelp as ehelp_command
 from .commands import forcequit as forcequit_command
 from .commands import help as help_command
 from .commands import log as log_command
-from .commands import op as op_command
 from .commands import rand as rand_command
 from .commands import rc as rc_command
 from .commands import time as time_command
@@ -116,34 +114,22 @@ class ExtraCommands(Star):
         """开关概率回复：/rc on|off|status"""
         yield await rc_command.run(self, event)
 
-    # ========== 权限与调试 ==========
-
-    @filter.command("op")
-    @catch_command_error
-    async def op(self, event: AstrMessageEvent):
-        """无参数：认领 owner；带用户 ID：添加管理员"""
-        yield await op_command.run(self, event)
-
-    @filter.command("deop")
-    @catch_command_error
-    async def deop(self, event: AstrMessageEvent):
-        """撤回管理员（owner 请直接编辑 json文件）"""
-        yield await deop_command.run(self, event)
+    # ========== 权限与调试（管理员由 AstrBot 官方 admins_id 判定） ==========
 
     @filter.command("ban")
     @catch_command_error
     async def ban(self, event: AstrMessageEvent):
-        """拉黑用户、查看黑名单、解除拉黑（owner / admin）"""
+        """拉黑用户、查看黑名单、解除拉黑（AstrBot 管理员）"""
         yield await ban_command.run(self, event)
 
     @filter.command("log")
     @catch_command_error
     async def log(self, event: AstrMessageEvent):
-        """查看最近的日志，交给模型分析并发一份文件（owner / admin）"""
+        """查看最近的日志，交给模型分析并发一份文件（AstrBot 管理员）"""
         yield await log_command.run(self, event)
 
     @filter.command("forcequit", alias={"fq"})
     @catch_command_error
     async def forcequit(self, event: AstrMessageEvent):
-        """退出机器人（owner / admin）"""
+        """退出机器人（AstrBot 管理员）"""
         yield await forcequit_command.run(self, event)

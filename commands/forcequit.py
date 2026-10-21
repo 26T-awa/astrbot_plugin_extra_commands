@@ -1,4 +1,4 @@
-"""/forcequit：退出 AstrBot 进程（owner / admin）。"""
+"""/forcequit：退出 AstrBot 进程（AstrBot 管理员）。"""
 
 import asyncio
 import os
@@ -16,7 +16,7 @@ FORCE_QUIT_DELAY = 3.0  # 发出退出信号后再等一会，仍未退出则强
 
 
 async def run(plugin, event: AstrMessageEvent) -> MessageEventResult:
-    """退出机器人（需 owner / admin）。"""
+    """退出机器人（需 AstrBot 管理员）。"""
     ensure_level(event, Level.ADMIN)
     parse_args(event.message_str, (0, 0))  # 该指令不接受参数
 

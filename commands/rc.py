@@ -10,6 +10,7 @@
 """
 
 import asyncio
+import json
 import random
 import sys
 from datetime import datetime, timezone
@@ -39,9 +40,12 @@ STATE_FILE = storage.PLUGIN_DATA_DIR / "randomchat_state.json"
 MAX_SESSIONS = 20  # 同时开启概率回复的会话数上限，避免定时任务无限增长
 MAX_LIST = 10  # /rc list 最多列出的会话数
 SYSTEM_PROMPT = (
-    "你在和一个熟悉的人聊天，现在主动问他一个问题。"
+    "你在和一个熟悉的人聊天。下面会给你最近的聊天记录，请顺着这些内容主动问他一个问题——"
+    "可以追问刚才没说完的事，也可以就他提过的东西再往下挖一点。"
     "一句话，自然、具体，不要堆砌表情符号，也不要提到任何机制或定时任务。"
 )
+HISTORY_MAX_MESSAGES = 20  # 最多带多少条历史消息
+HISTORY_MAX_CHARS = 4000  # 历史总字符上限，超出就从最旧的开始丢
 FALLBACKS = (
     "今天有没有遇到什么让你想吐槽的事情？",
     "最近有没有在认真做一件事？说来听听。",
@@ -313,15 +317,85 @@ async def _run_script() -> tuple[int, str]:
     return code, out.decode("utf-8", "replace")
 
 
+def _plain_text(content: Any) -> str:
+    """从历史消息的 content 里取出纯文本；兼容字符串与多模态列表两种形态。"""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, dict):
+                if part.get("type") == "text" and part.get("text"):
+                    parts.append(str(part["text"]))
+            elif isinstance(part, str):
+                parts.append(part)
+        return "".join(parts).strip()
+    return ""
+
+
+async def _recent_context(plugin, umo: str) -> list:
+    """取本会话最近的聊天记录，转成 llm_generate 能吃的 contexts。
+
+    只保留 user / assistant 的纯文本，按「从最新往回取」限制条数与总长度。
+    任何一步取不到就返回空列表，调用方照常退化成「无上下文提问」，不影响发送。
+    """
+    try:
+        cm = plugin.context.conversation_manager
+        cid = await cm.get_curr_conversation_id(umo)
+        if not cid:
+            return []
+        conv = await cm.get_conversation(umo, cid)
+        raw = getattr(conv, "history", "") if conv is not None else ""
+        if not raw:
+            return []
+        records = json.loads(raw)
+    except Exception as e:  # noqa: BLE001 - 读不到历史不该让整轮失败
+        logger.warning(f"概率回复读取会话历史失败，本轮改为无上下文提问：{e}")
+        return []
+
+    if not isinstance(records, list):
+        return []
+
+    picked: list[tuple[str, str]] = []
+    total = 0
+    for item in reversed(records):  # 从最新往回取，取够就停
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        if role not in ("user", "assistant"):
+            continue
+        text = _plain_text(item.get("content"))
+        if not text:
+            continue
+        if total + len(text) > HISTORY_MAX_CHARS:
+            break
+        picked.append((str(role), text))
+        total += len(text)
+        if len(picked) >= HISTORY_MAX_MESSAGES:
+            break
+
+    if not picked:
+        return []
+
+    try:
+        from astrbot.core.agent.message import Message
+    except Exception:  # noqa: BLE001 - 老版本没有这个类，就退化成无上下文
+        return []
+
+    return [Message(role=role, content=text) for role, text in reversed(picked)]
+
+
 async def _compose(plugin, umo: str, last_text: str) -> str:
-    """命中后生成一个问题：优先让模型写，模型不可用就退回兜底问题。"""
+    """命中后生成一个问题：顺着本会话最近的聊天记录问，模型不可用就退回兜底问题。"""
+    contexts = await _recent_context(plugin, umo)
     try:
         provider_id = await plugin.context.get_current_chat_provider_id(umo)
         resp = await asyncio.wait_for(
             plugin.context.llm_generate(
                 chat_provider_id=provider_id,
                 prompt=(
-                    "现在主动问他一个问题。"
+                    "现在主动问他一个问题，要顺着上面这些聊天内容往下问，"
+                    "别另起无关的话题，也别重复已经问过的东西。"
                     + (
                         f"上一次已经问过「{last_text}」，这次换个话题。"
                         if last_text
@@ -329,6 +403,7 @@ async def _compose(plugin, umo: str, last_text: str) -> str:
                     )
                 ),
                 system_prompt=SYSTEM_PROMPT,
+                contexts=contexts or None,
             ),
             timeout=LLM_TIMEOUT,
         )
@@ -360,16 +435,21 @@ async def _fire(plugin, **kwargs: Any) -> None:
     if code not in (0, 1):  # 脚本自己出问题：记一笔日志，但不打扰他
         logger.error(f"掷骰脚本异常（退出码 {code}）：{raw.strip()[:200]}")
         return
+    logger.info(
+        f"概率回复[{umo}] 掷骰结果：{raw.strip()[:40]!r}（退出码 {code}）"
+    )
     if "HIT" not in raw:  # MISS：本轮连一次 LLM 调用都没有
-        logger.debug(f"概率回复在会话 {umo} 本轮未命中（脚本判定），静默通过")
+        logger.info(f"概率回复[{umo}] 本轮 MISS，未调用模型，静默通过")
         return
 
+    logger.info(f"概率回复[{umo}] 本轮 HIT，开始生成提问")
     text = await _compose(plugin, umo, str(entry.get("last_text") or ""))
     try:
         await plugin.context.send_message(umo, MessageChain([Plain(text)]))
     except Exception as e:  # noqa: BLE001 - 发送失败不应影响插件运行
         logger.error(f"概率回复发送失败：{e}")
         return
+    logger.info(f"概率回复[{umo}] 已发出：{text[:60]!r}")
     _write_session(
         umo,
         last_text=text,
