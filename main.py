@@ -34,7 +34,7 @@ except ImportError as e:  # 公共仓库里没有这个文件，通道自动停�
     logger.debug(f"本机专用锚通道未启用：{e}")
 
 
-@register("extra_commands", "_26T", "额外命令", "0.1")
+@register("extra_commands", "_26T", "额外命令", "1.3")
 class ExtraCommands(Star):
     """额外命令插件的主类。"""
 
@@ -111,7 +111,7 @@ class ExtraCommands(Star):
     @filter.command("rc", alias={"randomchat"})
     @catch_command_error
     async def rc(self, event: AstrMessageEvent):
-        """开关概率回复：/rc on|off|status"""
+        """开关概率回复：/rc on|off|status|list|test"""
         yield await rc_command.run(self, event)
 
     # ========== 权限与调试（管理员由 AstrBot 官方 admins_id 判定） ==========

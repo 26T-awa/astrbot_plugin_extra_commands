@@ -2,7 +2,7 @@
 
 AstrBot 额外命令插件：随机数、时间与时区、闹钟、概率回复、插件帮助，以及基于 AstrBot 官方管理员体系的 /ban 与进程退出。
 
-> 作者：**26T-awa** · 版本：**v1.0** · [GitHub 仓库](https://github.com/26T-awa/astrbot_plugin_extra_commands)
+> 作者：**26T-awa** · 版本：**v1.3** · [GitHub 仓库](https://github.com/26T-awa/astrbot_plugin_extra_commands)
 >
 > 其中 `/log` 会读取 AstrBot 的内存日志，导出成文件发给会话，并可交给模型通读分析（仅 AstrBot 管理员）。
 
@@ -15,7 +15,7 @@ AstrBot 额外命令插件：随机数、时间与时区、闹钟、概率回复
 | `/rand` | `/random` | `[-r <true\|false>] [min] [max] [count]` | 所有人 | ✅ 可用 |
 | `/time` | — | `[时区]`、`setzone <时区>` | 所有人 | ✅ 可用 |
 | `/alarm` | — | `set <时间> <描述> [-llm]`、`list`、`del #<编号>` | 所有人 | ✅ 可用 |
-| `/rc` | `/randomchat` | `on` / `off` / `status` / `list` | AstrBot 管理员 | ✅ 可用 |
+| `/rc` | `/randomchat` | `on` / `off` / `status` / `list` / `test` | AstrBot 管理员 | ✅ 可用 |
 | `/forcequit` | `/fq` | — | AstrBot 管理员 | ✅ 可用 |
 | `/edata` | `/ed`,`/edt` | `get [key]` / `set <key> <value>` / `append <key> <value>` / `mod <key> <value>` / `del <key>` / `keys` / `clear` | 自己：所有人；`@某人`：AstrBot 管理员 | ✅ 可用 |
 | `/ban` | — | `@某人` / `list` / `del @某人` | AstrBot 管理员 | ✅ 可用 |
@@ -105,6 +105,8 @@ AstrBot 额外命令插件：随机数、时间与时区、闹钟、概率回复
 - **命中**：让该会话的对话模型生成一个问题并发送；模型不可用时退回内置的兜底问题
 
 `/rc on` 对本会话开启、`/rc off` 对本会话关闭、`/rc status` 查看本会话的状态与已命中次数、`/rc list` 列出所有开着的会话（最多同时开 20 个）。开关按会话保存在 `randomchat_state.json` 的 `sessions` 里，关掉的会话不再掷骰，也不影响其他会话。
+
+`/rc test`：**立即触发一次模拟命中**，马上按正常命中流程生成并发送一条问题到本会话。它不计入命中次数、不更新「上一次已问过」，也**不改动定时任务**（下一次检验时间保持原样）；本会话处于 `/rc off` 时同样可用，方便随时预览效果。
 
 ### 管理员与权限（AstrBot 官方 `admins_id`）
 

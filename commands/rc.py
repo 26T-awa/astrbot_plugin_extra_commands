@@ -79,11 +79,14 @@ async def setup(plugin) -> None:
 
 
 async def run(plugin, event: AstrMessageEvent) -> MessageEventResult:
-    """开关概率回复：/rc on|off|status|list（需 admin）。"""
+    """开关概率回复：/rc on|off|status|list|test（需 AstrBot 管理员）。"""
     ensure_level(event, Level.ADMIN)
     args = parse_args(event.message_str, (0, 1))
     action = args[0].lower() if args else "status"
     umo = str(event.unified_msg_origin or "")
+
+    if action == "test":  # 手动模拟一次命中：只发这一条，不记账、不碰定时任务
+        return await _test(plugin, event, umo)
 
     if action in ("on", "off"):
         if not umo:
@@ -112,7 +115,9 @@ async def run(plugin, event: AstrMessageEvent) -> MessageEventResult:
     if action in ("list", "sessions"):
         return event.plain_result(await _format_list(plugin))
 
-    raise ArgsInputError(action, "on / off / status / list", get_help_text("rc"))
+    raise ArgsInputError(
+        action, "on / off / status / list / test", get_help_text("rc")
+    )
 
 
 async def _format_status(plugin, umo: str) -> str:
@@ -144,6 +149,34 @@ async def _format_list(plugin) -> str:
     if len(opened) > MAX_LIST:
         lines.append(f"……还有 {len(opened) - MAX_LIST} 个没列出来。")
     return "\n".join(lines)
+
+
+async def _test(
+    plugin, event: AstrMessageEvent, umo: str
+) -> MessageEventResult:
+    """立即模拟一次命中：只往本会话发一条问题，不记账、不碰定时任务。
+
+    - 即使本会话处于 /rc off，也允许手动测试；
+    - 不增加命中次数、不更新 last_text/last_at；
+    - 不改动定时任务，下一次检验时间保持原样。
+    """
+    if not umo:
+        return event.plain_result("❌ 没能识别出会话，无法测试概率回复。")
+
+    entry = _session_state(_read_state(), umo)
+    text = await _compose(plugin, umo, str(entry.get("last_text") or ""))
+    try:
+        await plugin.context.send_message(umo, MessageChain([Plain(text)]))
+    except Exception as e:  # noqa: BLE001 - 测试发送失败要给用户可见提示
+        logger.error(f"概率回复测试发送失败：{e}")
+        return event.plain_result(f"❌ 测试消息发送失败：{e}")
+
+    logger.info(f"概率回复[{umo}] 手动测试已发送（不计入命中次数）：{text[:60]!r}")
+    return event.plain_result(
+        "🎲 已立即触发一次测试命中，问题已直接发到本会话。\n"
+        "本次不计入命中次数、不更新「上一次已问过」，也不影响下一次检验时间；"
+        "/rc off 状态下同样可用。"
+    )
 
 
 def _migrate_legacy() -> None:
