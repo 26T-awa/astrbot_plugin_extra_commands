@@ -2,7 +2,7 @@
 
 AstrBot 额外命令插件：随机数、时间与时区、闹钟、概率回复、插件帮助，以及基于 AstrBot 官方管理员体系的 /ban 与进程退出。
 
-> 作者：**26T-awa** · 版本：**v1.3** · [GitHub 仓库](https://github.com/26T-awa/astrbot_plugin_extra_commands)
+> 作者：**26T-awa** · 版本：**v1.4** · [GitHub 仓库](https://github.com/26T-awa/astrbot_plugin_extra_commands)
 >
 > 其中 `/log` 会读取 AstrBot 的内存日志，导出成文件发给会话，并可交给模型通读分析（仅 AstrBot 管理员）。
 
@@ -133,7 +133,7 @@ AstrBot 管理员不可被拉黑，也不能把自己拉黑；写入 `usergroup.
 - `/log [n] <问题>`：把问题一并交给模型，让它针对日志回答
 - `/log -f [n]`：只导出日志文件，不调用模型
 
-日志缓存经 `astrbot.core.log.LogManager._log_broker` 取得，取不到时回退到 `logging.getLogger("astrbot")` 上的 `LogQueueHandler`；文件写在 `<数据目录>/logs/` 下、文件名带时间戳，交给模型的正文超过 12000 字时只保留最新的一段。模型不可用时仍会把文件发出来，并附一句提示。
+日志缓存经 `astrbot.core.log.LogManager._log_broker` 取得；AstrBot 目前没有公开的日志缓存读取接口，取不到时直接提示「日志缓存不可用」（不再回退到 Python 内置 `logging`）。文件写在 `<数据目录>/logs/` 下、文件名带时间戳，交给模型的正文超过 12000 字时只保留最新的一段。模型不可用时仍会把文件发出来，并附一句提示。
 
 ### `/forcequit` — 退出 AstrBot（AstrBot 管理员）
 
@@ -246,7 +246,7 @@ astrbot_plugin_extra_commands/
 
 ## 已知问题
 
-- `/log` 依赖 AstrBot 未公开的 `LogManager._log_broker` 取内存日志，版本变动时可能取不到；取不到会回退到 `astrbot` logger 上的 `LogQueueHandler`
+- `/log` 依赖 AstrBot 未公开的 `LogManager._log_broker` 取内存日志，版本变动时可能取不到；取不到会直接提示「日志缓存不可用」，不回退到 Python 内置 `logging`
 - 黑名单拦截依赖 AstrBot 的 `priority` 顺序与 `event.stop_event()`，且只在事件管线内生效；若有人绕过 AstrBot 直接调用插件函数，拦截不起作用
 - `/rand -r` 的开关、`/time setzone` 的时区都只存在于当前进程，插件重载后回到默认值
 - `/alarm`、`/rc` 依赖 AstrBot 的定时任务管理器（`context.cron_manager`），旧版本没有它时 `/alarm` 会提示无法设置

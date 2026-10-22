@@ -33,8 +33,14 @@ except ImportError as e:  # 公共仓库里没有这个文件，通道自动停�
     anchor_local = None
     logger.debug(f"本机专用锚通道未启用：{e}")
 
+try:  # 本机专用：每日课程汇报（commands/course_local.py 不随仓库分发）
+    from .commands import course_local
+except ImportError as e:  # 公共仓库里没有这个文件，自动汇报自动停用
+    course_local = None
+    logger.debug(f"本机课程汇报未启用：{e}")
 
-@register("extra_commands", "_26T", "额外命令", "1.3")
+
+@register("extra_commands", "_26T", "额外命令", "1.4")
 class ExtraCommands(Star):
     """额外命令插件的主类。"""
 
@@ -45,6 +51,8 @@ class ExtraCommands(Star):
         Level.load()
         await alarm_command.setup(self)  # 闹钟是 AstrBot 的定时任务，启动时重新绑好处理器
         await rc_command.setup(self)  # 概率回复：脚本掷骰，命中才叫一次模型，开关由 /rc 控制
+        if course_local is not None:  # 本机专用：07:45 / 13:00 自动汇报当日课程
+            await course_local.setup(self)
 
     async def terminate(self):
         """插件被停用 / 卸载时由 AstrBot 调用。"""

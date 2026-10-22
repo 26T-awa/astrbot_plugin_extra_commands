@@ -10,10 +10,12 @@ AstrBot 用 `LogBroker` 在内存里缓存最近 500 条日志（实例由
     /log [n] <问题>  把问题一并交给模型，让它针对日志回答
 
 日志文件写在 `<数据目录>/logs/` 下，每次导出新的一份（文件名带时间戳）。
+
+AstrBot 没有公开的日志缓存读取接口，本模块只读 `LogManager` 上的私有 broker；
+取不到缓存时直接提示不可用，不回退到 Python 内置 logging。
 """
 
 import asyncio
-import logging
 import re
 
 from astrbot.api import logger
@@ -42,6 +44,7 @@ SYSTEM_PROMPT = (
 )
 
 WRITE_FAILED = "⚠️ 日志文件写入失败，请查看日志。"
+CACHE_UNAVAILABLE = "⚠️ 取不到日志：AstrBot 的内存日志缓存不可用（当前版本没有启用日志代理）。"
 EMPTY_CACHE = "⚠️ 取不到日志：AstrBot 的内存日志缓存是空的。"
 LLM_FAILED = "⚠️ 模型没能给出分析结果，日志文件还是先发给你。"
 
@@ -50,6 +53,9 @@ async def run(plugin, event: AstrMessageEvent) -> MessageEventResult:
     """把最近的内存日志发出来，默认再让模型读一遍（需 AstrBot 管理员）。"""
     ensure_level(event, Level.ADMIN)
     count, only_file, question = _parse_args(event.message_str)
+
+    if _log_broker() is None:  # 没有日志代理：直接提示不可用，不再走 logging 回退
+        return event.plain_result(CACHE_UNAVAILABLE)
 
     lines = _read_logs(count)
     if not lines:
@@ -138,14 +144,18 @@ def _read_logs(count: int) -> list[str]:
     return lines
 
 
+def _log_broker():
+    """取 AstrBot 的内存日志代理（LogBroker）；取不到时返回 None。
+
+    AstrBot 目前没有公开的日志缓存读取接口，只能读 `LogManager` 上的私有
+    broker；取不到就按“缓存不可用”处理，不回退到 Python 内置 logging。
+    """
+    return getattr(LogManager, "_log_broker", None)
+
+
 def _log_cache():
     """拿到 LogBroker 的日志缓存（deque），拿不到时返回空元组。"""
-    broker = getattr(LogManager, "_log_broker", None)
-    if broker is None:  # 兜底：LogQueueHandler 自己也攥着同一个 broker
-        for handler in logging.getLogger("astrbot").handlers:
-            broker = getattr(handler, "log_broker", None)
-            if broker is not None:
-                break
+    broker = _log_broker()
     return getattr(broker, "log_cache", ()) or ()
 
 
